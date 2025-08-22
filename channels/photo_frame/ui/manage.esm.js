@@ -13,6 +13,16 @@ class XPhotoFrameManager extends HTMLElement {
     return window.mimirServerBaseUrl || window.location.origin;
   }
 
+  getSettingValue(key, defaultValue = null) {
+    // Helper to extract value from new settings format: {type: "string", value: "..."}
+    const setting = this.settings[key];
+    if (setting && typeof setting === 'object' && 'value' in setting) {
+      return setting.value;
+    }
+    // Fallback for old format or missing setting
+    return setting || defaultValue;
+  }
+
   async connectedCallback() {
     await this.loadData();
     this.render();
@@ -194,25 +204,46 @@ class XPhotoFrameManager extends HTMLElement {
             <div class="setting-group">
               <label>Slideshow Mode</label>
               <select id="slideshow-enabled">
-                <option value="true" ${this.settings.slideshow_enabled !== false ? 'selected' : ''}>Enabled</option>
-                <option value="false" ${this.settings.slideshow_enabled === false ? 'selected' : ''}>Disabled</option>
+                <option value="true" ${this.getSettingValue('slideshow_enabled', true) !== false ? 'selected' : ''}>Enabled</option>
+                <option value="false" ${this.getSettingValue('slideshow_enabled', true) === false ? 'selected' : ''}>Disabled</option>
               </select>
             </div>
             <div class="setting-group">
               <label>Image Order</label>
               <select id="order-mode">
-                <option value="added" ${this.settings.order_mode === 'added' ? 'selected' : ''}>Date Added</option>
-                <option value="random" ${this.settings.order_mode === 'random' ? 'selected' : ''}>Random</option>
-                <option value="custom" ${this.settings.order_mode === 'custom' ? 'selected' : ''}>Custom Order</option>
+                <option value="added" ${this.getSettingValue('order_mode', 'added') === 'added' ? 'selected' : ''}>Date Added</option>
+                <option value="random" ${this.getSettingValue('order_mode', 'added') === 'random' ? 'selected' : ''}>Random</option>
+                <option value="custom" ${this.getSettingValue('order_mode', 'added') === 'custom' ? 'selected' : ''}>Custom Order</option>
               </select>
             </div>
             <div class="setting-group">
               <label>Display Mode</label>
               <select id="crop-mode">
-                <option value="smart_crop" ${this.settings.crop_mode === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
-                <option value="letterbox" ${this.settings.crop_mode === 'letterbox' ? 'selected' : ''}>Letterbox</option>
-                <option value="stretch" ${this.settings.crop_mode === 'stretch' ? 'selected' : ''}>Stretch</option>
+                <option value="smart_crop" ${this.getSettingValue('crop_mode', 'smart_crop') === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
+                <option value="letterbox" ${this.getSettingValue('crop_mode', 'smart_crop') === 'letterbox' ? 'selected' : ''}>Letterbox</option>
+                <option value="stretch" ${this.getSettingValue('crop_mode', 'smart_crop') === 'stretch' ? 'selected' : ''}>Stretch</option>
               </select>
+            </div>
+            <div class="setting-group">
+              <label>Transition Effect</label>
+              <select id="transition-effect">
+                <option value="fade" ${this.getSettingValue('transition_effect', 'fade') === 'fade' ? 'selected' : ''}>Fade</option>
+                <option value="slide" ${this.getSettingValue('transition_effect', 'fade') === 'slide' ? 'selected' : ''}>Slide</option>
+                <option value="none" ${this.getSettingValue('transition_effect', 'fade') === 'none' ? 'selected' : ''}>None</option>
+              </select>
+            </div>
+            <div class="setting-group">
+              <label>Update Interval Unit</label>
+              <select id="update-interval-unit">
+                <option value="seconds" ${this.getSettingValue('update_interval_unit', 'minutes') === 'seconds' ? 'selected' : ''}>Seconds</option>
+                <option value="minutes" ${this.getSettingValue('update_interval_unit', 'minutes') === 'minutes' ? 'selected' : ''}>Minutes</option>
+                <option value="hours" ${this.getSettingValue('update_interval_unit', 'minutes') === 'hours' ? 'selected' : ''}>Hours</option>
+                <option value="days" ${this.getSettingValue('update_interval_unit', 'minutes') === 'days' ? 'selected' : ''}>Days</option>
+              </select>
+            </div>
+            <div class="setting-group">
+              <label>Update Interval Value</label>
+              <input type="number" id="update-interval-value" min="1" value="${this.getSettingValue('update_interval_value', 30)}" />
             </div>
           </div>
         </div>
@@ -282,7 +313,14 @@ class XPhotoFrameManager extends HTMLElement {
     });
 
     // Settings change listeners
-    const settingsElements = ['slideshow-enabled', 'order-mode', 'crop-mode'];
+    const settingsElements = [
+      'slideshow-enabled', 
+      'order-mode', 
+      'crop-mode', 
+      'transition-effect',
+      'update-interval-unit', 
+      'update-interval-value'
+    ];
     settingsElements.forEach(id => {
       const element = this.shadowRoot.getElementById(id);
       element?.addEventListener('change', () => this.saveSettings());
@@ -319,7 +357,10 @@ class XPhotoFrameManager extends HTMLElement {
     const settings = {
       slideshow_enabled: this.shadowRoot.getElementById('slideshow-enabled').value === 'true',
       order_mode: this.shadowRoot.getElementById('order-mode').value,
-      crop_mode: this.shadowRoot.getElementById('crop-mode').value
+      crop_mode: this.shadowRoot.getElementById('crop-mode').value,
+      transition_effect: this.shadowRoot.getElementById('transition-effect').value,
+      update_interval_unit: this.shadowRoot.getElementById('update-interval-unit').value,
+      update_interval_value: parseInt(this.shadowRoot.getElementById('update-interval-value').value)
     };
 
     try {

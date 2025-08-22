@@ -129,21 +129,26 @@ class PhotoFrameChannel:
             if settings.get("crop_mode") not in valid_crops:
                 errors["crop_mode"] = f"Must be one of: {', '.join(valid_crops)}"
         
-        # Validate slideshow_interval (only if present)
-        if "slideshow_interval" in settings:
-            interval = settings.get("slideshow_interval")
-            try:
-                interval_int = int(interval)
-                if interval_int < 5 or interval_int > 300:
-                    errors["slideshow_interval"] = "Must be between 5 and 300 seconds"
-            except (ValueError, TypeError):
-                errors["slideshow_interval"] = "Must be a valid integer"
-        
         # Validate transition_effect (only if present)
         if "transition_effect" in settings:
             valid_transitions = ["fade", "slide", "none"]
             if settings.get("transition_effect") not in valid_transitions:
                 errors["transition_effect"] = f"Must be one of: {', '.join(valid_transitions)}"
+        
+        # Validate update_interval_unit (only if present)
+        if "update_interval_unit" in settings:
+            valid_units = ["days", "hours", "minutes", "seconds"]
+            if settings.get("update_interval_unit") not in valid_units:
+                errors["update_interval_unit"] = f"Must be one of: {', '.join(valid_units)}"
+        
+        # Validate update_interval_value (only if present)
+        if "update_interval_value" in settings:
+            try:
+                value = int(settings.get("update_interval_value"))
+                if value < 1:
+                    errors["update_interval_value"] = "Must be at least 1"
+            except (TypeError, ValueError):
+                errors["update_interval_value"] = "Must be a valid positive integer"
         
         return errors
     
@@ -259,11 +264,30 @@ class PhotoFrameChannel:
                 settings = self._config.get("settings", {}).get("defaults", {})
             
             return JSONResponse({
-                "slideshow_enabled": settings.get("slideshow_enabled", True),
-                "order_mode": settings.get("order_mode", "added"),
-                "crop_mode": settings.get("crop_mode", "smart_crop"),
-                "slideshow_interval": settings.get("slideshow_interval", 30),
-                "transition_effect": settings.get("transition_effect", "fade")
+                "slideshow_enabled": {
+                    "type": "boolean",
+                    "value": settings.get("slideshow_enabled", True)
+                },
+                "order_mode": {
+                    "type": "string", 
+                    "value": settings.get("order_mode", "added")
+                },
+                "crop_mode": {
+                    "type": "string",
+                    "value": settings.get("crop_mode", "smart_crop")
+                },
+                "transition_effect": {
+                    "type": "string",
+                    "value": settings.get("transition_effect", "fade")
+                },
+                "update_interval_unit": {
+                    "type": "string",
+                    "value": settings.get("update_interval_unit", "minutes")
+                },
+                "update_interval_value": {
+                    "type": "integer",
+                    "value": settings.get("update_interval_value", 30)
+                }
             })
 
         @router.put("/settings")

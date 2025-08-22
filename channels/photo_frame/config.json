@@ -54,8 +54,9 @@
       "slideshow_enabled": true,
       "order_mode": "added",
       "crop_mode": "smart_crop",
-      "slideshow_interval": 30,
-      "transition_effect": "fade"
+      "transition_effect": "fade",
+      "update_interval_unit": "minutes",
+      "update_interval_value": 30
     },
     "schema": {
       "type": "object",
@@ -77,20 +78,26 @@
           "title": "Display Mode",
           "description": "How to fit images to display"
         },
-        "slideshow_interval": {
-          "type": "integer",
-          "minimum": 5,
-          "maximum": 300,
-          "title": "Slideshow Speed (seconds)",
-          "description": "Time between image changes in slideshow mode",
-          "default": 30
-        },
         "transition_effect": {
           "type": "string",
           "enum": ["fade", "slide", "none"],
           "title": "Transition Effect",
           "description": "Visual transition between images",
           "default": "fade"
+        },
+        "update_interval_unit": {
+          "type": "string",
+          "enum": ["days", "hours", "minutes", "seconds"],
+          "title": "Update Interval Unit",
+          "description": "Unit for channel update frequency",
+          "default": "minutes"
+        },
+        "update_interval_value": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Update Interval Value",
+          "description": "Numeric value for channel update frequency",
+          "default": 30
         }
       }
     }
