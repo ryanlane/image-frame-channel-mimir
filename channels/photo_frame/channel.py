@@ -117,15 +117,33 @@ class PhotoFrameChannel:
         """Validate channel settings"""
         errors = {}
         
-        # Validate order_mode
-        valid_orders = ["added", "random", "custom"]
-        if settings.get("order_mode") not in valid_orders:
-            errors["order_mode"] = f"Must be one of: {', '.join(valid_orders)}"
+        # Validate order_mode (only if present)
+        if "order_mode" in settings:
+            valid_orders = ["added", "random", "custom"]
+            if settings.get("order_mode") not in valid_orders:
+                errors["order_mode"] = f"Must be one of: {', '.join(valid_orders)}"
         
-        # Validate crop_mode
-        valid_crops = ["smart_crop", "letterbox", "stretch"]
-        if settings.get("crop_mode") not in valid_crops:
-            errors["crop_mode"] = f"Must be one of: {', '.join(valid_crops)}"
+        # Validate crop_mode (only if present)
+        if "crop_mode" in settings:
+            valid_crops = ["smart_crop", "letterbox", "stretch"]
+            if settings.get("crop_mode") not in valid_crops:
+                errors["crop_mode"] = f"Must be one of: {', '.join(valid_crops)}"
+        
+        # Validate slideshow_interval (only if present)
+        if "slideshow_interval" in settings:
+            interval = settings.get("slideshow_interval")
+            try:
+                interval_int = int(interval)
+                if interval_int < 5 or interval_int > 300:
+                    errors["slideshow_interval"] = "Must be between 5 and 300 seconds"
+            except (ValueError, TypeError):
+                errors["slideshow_interval"] = "Must be a valid integer"
+        
+        # Validate transition_effect (only if present)
+        if "transition_effect" in settings:
+            valid_transitions = ["fade", "slide", "none"]
+            if settings.get("transition_effect") not in valid_transitions:
+                errors["transition_effect"] = f"Must be one of: {', '.join(valid_transitions)}"
         
         return errors
     
@@ -243,7 +261,9 @@ class PhotoFrameChannel:
             return JSONResponse({
                 "slideshow_enabled": settings.get("slideshow_enabled", True),
                 "order_mode": settings.get("order_mode", "added"),
-                "crop_mode": settings.get("crop_mode", "smart_crop")
+                "crop_mode": settings.get("crop_mode", "smart_crop"),
+                "slideshow_interval": settings.get("slideshow_interval", 30),
+                "transition_effect": settings.get("transition_effect", "fade")
             })
 
         @router.put("/settings")

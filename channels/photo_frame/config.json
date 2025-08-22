@@ -7,7 +7,9 @@
   "author": "Ryan Lane",
   "update_schedule": {
     "unit": "minutes",
-    "duration": 15
+    "duration": 15,
+    "settings_driven": true,
+    "settings_key": "slideshow_interval"
   },
   "placeholder_image": "placeholder.jpg",
   "current_image": "current.jpg",
@@ -27,7 +29,11 @@
           "stats": {"type": "object"}
         }
       },
-      "renderMode": "element"
+      "renderMode": "element",
+      "integrity": {
+        "module": "sha384-D1kPtXIKIFRTjdfjh2qWRFFJ1TtExVP8w1h6F348cJnSxTiLbg3lQblPW1ENU2Tn",
+        "style": "sha384-WDQcixiu+7CxVwxbEb5MdHQjhF7uWwiKCYVLUTgkCwMGmBwThlpklpNsVspPIims"
+      }
     },
     {
       "route": "/photo-frame",
@@ -37,14 +43,19 @@
         "label": "Photo Frame",
         "icon": "image"
       },
-      "renderMode": "element"
+      "renderMode": "element",
+      "integrity": {
+        "module": "sha384-e1c5i8U5teEKEFKJIG1KZ/r/cOpRIIk3CyXEdtM4eFesPbzJNdX9A8HhgLU3aMRD"
+      }
     }
   ],
   "settings": {
     "defaults": {
       "slideshow_enabled": true,
       "order_mode": "added",
-      "crop_mode": "smart_crop"
+      "crop_mode": "smart_crop",
+      "slideshow_interval": 30,
+      "transition_effect": "fade"
     },
     "schema": {
       "type": "object",
@@ -65,6 +76,21 @@
           "enum": ["smart_crop", "letterbox", "stretch"],
           "title": "Display Mode",
           "description": "How to fit images to display"
+        },
+        "slideshow_interval": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "title": "Slideshow Speed (seconds)",
+          "description": "Time between image changes in slideshow mode",
+          "default": 30
+        },
+        "transition_effect": {
+          "type": "string",
+          "enum": ["fade", "slide", "none"],
+          "title": "Transition Effect",
+          "description": "Visual transition between images",
+          "default": "fade"
         }
       }
     }
