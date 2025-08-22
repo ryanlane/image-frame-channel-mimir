@@ -231,6 +231,48 @@ class PhotoFrameChannel:
             else:
                 raise HTTPException(status_code=404, detail="Image not found")
         
+        @router.get("/settings")
+        async def get_settings():
+            """Get current photo frame configuration"""
+            # Get settings from database or use defaults
+            settings = self.db.get_settings()
+            if not settings:
+                # Return defaults from config if no settings stored
+                settings = self._config.get("settings", {}).get("defaults", {})
+            
+            return JSONResponse({
+                "slideshow_enabled": settings.get("slideshow_enabled", True),
+                "order_mode": settings.get("order_mode", "added"),
+                "crop_mode": settings.get("crop_mode", "smart_crop")
+            })
+
+        @router.put("/settings")
+        async def update_settings(request: Request):
+            """Update photo frame configuration"""
+            try:
+                settings_data = await request.json()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid JSON data")
+            
+            # Validate settings
+            errors = await self.validate_settings(settings_data)
+            if errors:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "errors": errors
+                    }
+                )
+            
+            # Update settings in database
+            success = self.db.update_settings(settings_data)
+            
+            if success:
+                return JSONResponse({"success": True})
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update settings")
+
         @router.get("/hardware")
         async def get_hardware():
             """Get Inky display hardware info"""

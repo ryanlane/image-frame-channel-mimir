@@ -148,10 +148,16 @@ class PhotoFrameDB:
                 settings[k] = v
         return settings
 
-    def update_settings(self, settings: Dict[str, Any]):
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        for k, v in settings.items():
-            c.execute('REPLACE INTO channel_settings (key, value) VALUES (?, ?)', (k, str(v)))
-        conn.commit()
-        conn.close()
+    def update_settings(self, settings: Dict[str, Any]) -> bool:
+        """Update settings in database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            c = conn.cursor()
+            for k, v in settings.items():
+                c.execute('REPLACE INTO channel_settings (key, value) VALUES (?, ?)', (k, str(v)))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error updating settings: {e}")
+            return False
