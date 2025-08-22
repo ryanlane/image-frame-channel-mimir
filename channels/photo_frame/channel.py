@@ -69,48 +69,125 @@ class PhotoFrameChannel:
         """Channel configuration"""
         return self._config
     
-    async def render_image(
-        self, 
-        resolution: Tuple[int, int], 
-        orientation: str, 
-        settings: Dict[str, Any]
-    ) -> str:
-        """
-        Generate/select next image for display
+    # async def render_image(
+    #     self, 
+    #     resolution: Tuple[int, int], 
+    #     orientation: str, 
+    #     settings: Dict[str, Any]
+    # ) -> str:
+    #     """
+    #     Generate/select next image for display
         
-        Args:
-            resolution: (width, height) in pixels
-            orientation: "landscape" or "portrait"
-            settings: User configuration from Mimir Platform
+    #     Args:
+    #         resolution: (width, height) in pixels
+    #         orientation: "landscape" or "portrait"
+    #         settings: User configuration from Mimir Platform
             
-        Returns:
-            Relative path to image file
+    #     Returns:
+    #         Relative path to image file
+    #     """
+    #     try:
+    #         # Get next image based on slideshow settings
+    #         image_record = await self._get_next_image(settings)
+            
+    #         if not image_record:
+    #             # No images available, return placeholder
+    #             return self.config["placeholder_image"]
+            
+    #         # Process image for display
+    #         output_path = await self._process_image_for_display(
+    #             image_record, resolution, orientation, settings
+    #         )
+            
+    #         # Update statistics
+    #         await self._update_image_stats(image_record["id"])
+            
+    #         self.current_image_id = image_record["id"]
+    #         self.last_update = datetime.now(timezone.utc)
+    #         self.last_error = None
+            
+    #         return self.config["current_image"]
+            
+    #     except Exception as e:
+    #         self.last_error = str(e)
+    #         # Return last successful image or placeholder
+    #         return await self._get_fallback_image()
+    
+    
+    async def render_image(self, resolution: tuple, orientation: str = "landscape", settings: dict = None):
+        """
+        Render image for specific display resolution using resolution-based folder structure.
+        Creates images in current/{width}x{height}/ subfolders for efficient sharing.
         """
         try:
-            # Get next image based on slideshow settings
-            image_record = await self._get_next_image(settings)
+            # Create resolution-specific directory
+            width, height = resolution
+            resolution_folder = f"{width}x{height}"
+            resolution_dir = self.channel_dir / "current" / resolution_folder
+            resolution_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Set output path for this resolution
+            output_path = resolution_dir / "current.jpg"
+            
+            print(f"🎯 Rendering image for photo frame at resolution {width}x{height}")
+            
+            # Get current settings
+            current_settings = settings or {}
+            
+            # Get next image based on slideshow settings (this implements rotation logic)
+            image_record = await self._get_next_image(current_settings)
             
             if not image_record:
-                # No images available, return placeholder
-                return self.config["placeholder_image"]
+                # No images available, use placeholder
+                placeholder_path = self.channel_dir / "placeholder.jpg"
+                if placeholder_path.exists():
+                    # Process placeholder for this resolution using old method signature
+                    await self._process_placeholder_for_display(
+                        placeholder_path, output_path, resolution, current_settings
+                    )
+                    print(f"✅ Used placeholder image for {resolution_folder}")
+                    return str(output_path)
+                else:
+                    raise Exception("No images available and no placeholder found")
             
-            # Process image for display
-            output_path = await self._process_image_for_display(
-                image_record, resolution, orientation, settings
+            # Process image for display using the existing method
+            await self._process_image_for_display(
+                image_record, resolution, orientation, current_settings
             )
             
-            # Update statistics
+            # Copy the processed image to our resolution-specific location
+            legacy_current = self.channel_dir / self.config["current_image"]
+            if legacy_current.exists():
+                import shutil
+                shutil.copy2(legacy_current, output_path)
+                print(f"✅ Generated {resolution_folder}/current.jpg ({output_path.stat().st_size} bytes)")
+            
+            # Update statistics (important for slideshow rotation)
             await self._update_image_stats(image_record["id"])
             
+            # Update state tracking
             self.current_image_id = image_record["id"]
             self.last_update = datetime.now(timezone.utc)
             self.last_error = None
             
-            return self.config["current_image"]
+            return str(output_path)
             
         except Exception as e:
+            print(f"❌ Failed to render image for resolution {resolution}: {e}")
             self.last_error = str(e)
-            # Return last successful image or placeholder
+            
+            # Try to fall back to placeholder
+            try:
+                placeholder_path = self.channel_dir / "placeholder.jpg"
+                if placeholder_path.exists():
+                    import shutil
+                    shutil.copy2(placeholder_path, output_path)
+                    print(f"🔄 Used placeholder as fallback for {resolution_folder}")
+                    return str(output_path)
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+            
+            # Return fallback image using existing logic
             return await self._get_fallback_image()
     
     async def validate_settings(self, settings: Dict[str, Any]) -> Dict[str, str]:
@@ -361,6 +438,49 @@ class PhotoFrameChannel:
         """Get next image by date added"""
         # Sort by times_shown (least shown first), then by creation date
         return sorted(images, key=lambda x: (x.get("times_shown", 0), x.get("created_at", "")))[0]
+    
+    async def _process_placeholder_for_display(
+        self, 
+        placeholder_path: Path, 
+        output_path: Path, 
+        resolution: tuple, 
+        settings: dict
+    ):
+        """Process placeholder image for display"""
+        # Create a mock image record for placeholder processing
+        placeholder_record = {
+            "filename": "placeholder.jpg",
+            "crop_x": 0,
+            "crop_y": 0,
+            "crop_width": 100,
+            "crop_height": 100
+        }
+        
+        # Use existing processing logic but with placeholder
+        crop_mode = settings.get("crop_mode", "smart_crop")
+        
+        if crop_mode == "smart_crop":
+            await self.image_processor.render_with_crop(
+                source_path=placeholder_path,
+                output_path=output_path,
+                resolution=resolution,
+                crop_x=0,
+                crop_y=0,
+                crop_width=100,
+                crop_height=100
+            )
+        elif crop_mode == "letterbox":
+            await self.image_processor.render_letterbox(
+                source_path=placeholder_path,
+                output_path=output_path,
+                resolution=resolution
+            )
+        else:  # "stretch"
+            await self.image_processor.render_stretch(
+                source_path=placeholder_path,
+                output_path=output_path,
+                resolution=resolution
+            )
     
     async def _process_image_for_display(
         self, 
