@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "2.1",
+  "id": "com.epaperframe.photoframe",
+  "name": "Photo Frame",
+  "description": "Digital photo frame with intelligent cropping and slideshow management",
+  "version": "1.0.0",
+  "author": "Ryan Lane",
+  "update_schedule": {
+    "unit": "minutes",
+    "duration": 15
+  },
+  "placeholder_image": "placeholder.jpg",
+  "current_image": "current.jpg",
+  "permissions": ["read:images", "write:images"],
+  "ui": [
+    {
+      "element": "x-photo-frame-card",
+      "moduleUrl": "/api/channels/com.epaperframe.photoframe/ui/index.esm.js",
+      "styleUrl": "/api/channels/com.epaperframe.photoframe/ui/styles.css",
+      "slots": ["dashboard.gallery", "dashboard.sidebar"],
+      "propsSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "user": {"type": "object"},
+          "settings": {"type": "object"},
+          "stats": {"type": "object"}
+        }
+      },
+      "renderMode": "element",
+      "integrity": {
+        "module": "sha384-...",
+        "style": "sha384-..."
+      }
+    },
+    {
+      "route": "/photo-frame",
+      "element": "x-photo-frame-manager",
+      "moduleUrl": "/api/channels/com.epaperframe.photoframe/ui/manage.esm.js",
+      "nav": {
+        "label": "Photo Frame",
+        "icon": "image"
+      },
+      "renderMode": "element"
+    }
+  ],
+  "settings": {
+    "slideshow_enabled": {
+      "type": "boolean",
+      "default": true,
+      "label": "Enable Slideshow",
+      "description": "Automatically rotate through images"
+    },
+    "order_mode": {
+      "type": "select",
+      "options": ["added", "random", "custom"],
+      "default": "added",
+      "label": "Image Order",
+      "description": "How to order images in slideshow"
+    },
+    "crop_mode": {
+      "type": "select",
+      "options": ["smart_crop", "letterbox", "stretch"],
+      "default": "smart_crop",
+      "label": "Display Mode",
+      "description": "How to fit images to display"
+    }
+  },
+  "assets": [
+    {
+      "name": "logo",
+      "url": "/api/channels/com.epaperframe.photoframe/assets/logo.svg"
+    }
+  ],
+  "capabilities": {
+    "supports_orientations": ["landscape", "portrait"],
+    "supports_resolutions": ["any"],
+    "requires_network": false,
+    "storage_type": "local",
+    "update_triggers": ["time_based", "manual"]
+  }
+}
