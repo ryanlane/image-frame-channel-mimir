@@ -1,7 +1,7 @@
 // x-photo-frame-card Web Component for Mimir Platform v2.4
 class XPhotoFrameCard extends HTMLElement {
   constructor() {
-    super();
+            img.src = `/api/channels/com.epaperframe.photoframe/image?t=${Date.now()}`;   super();
     this.attachShadow({ mode: 'open' });
   }
 
