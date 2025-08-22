@@ -1,0 +1,9 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#f8f9fa"/>
+  <rect x="40" y="40" width="720" height="520" fill="none" stroke="#dee2e6" stroke-width="4"/>
+  <text x="400" y="280" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#6c757d">Photo Frame</text>
+  <text x="400" y="320" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#6c757d">No images uploaded</text>
+  <circle cx="400" cy="360" r="40" fill="none" stroke="#dee2e6" stroke-width="2"/>
+  <rect x="380" y="340" width="40" height="24" fill="#dee2e6" rx="2"/>
+  <circle cx="388" cy="348" r="2" fill="#6c757d"/>
+</svg>

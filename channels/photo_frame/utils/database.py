@@ -134,7 +134,19 @@ class PhotoFrameDB:
         c.execute('SELECT key, value FROM channel_settings')
         rows = c.fetchall()
         conn.close()
-        return {k: v for k, v in rows}
+        settings = {}
+        for k, v in rows:
+            # Try to parse JSON values, fallback to string
+            try:
+                if v.lower() in ('true', 'false'):
+                    settings[k] = v.lower() == 'true'
+                elif v.isdigit():
+                    settings[k] = int(v)
+                else:
+                    settings[k] = v
+            except:
+                settings[k] = v
+        return settings
 
     def update_settings(self, settings: Dict[str, Any]):
         conn = sqlite3.connect(self.db_path)

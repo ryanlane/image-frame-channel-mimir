@@ -1,5 +1,4 @@
-fastapi
-uvicorn
-pillow
-sqlite3
-python-multipart
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pillow>=10.0.0
+python-multipart>=0.0.6

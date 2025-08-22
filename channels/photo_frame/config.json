@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2.1",
+  "schemaVersion": "2.4",
   "id": "com.epaperframe.photoframe",
   "name": "Photo Frame",
   "description": "Digital photo frame with intelligent cropping and slideshow management",
@@ -27,11 +27,7 @@
           "stats": {"type": "object"}
         }
       },
-      "renderMode": "element",
-      "integrity": {
-        "module": "sha384-...",
-        "style": "sha384-..."
-      }
+      "renderMode": "element"
     },
     {
       "route": "/photo-frame",
@@ -45,25 +41,32 @@
     }
   ],
   "settings": {
-    "slideshow_enabled": {
-      "type": "boolean",
-      "default": true,
-      "label": "Enable Slideshow",
-      "description": "Automatically rotate through images"
+    "defaults": {
+      "slideshow_enabled": true,
+      "order_mode": "added",
+      "crop_mode": "smart_crop"
     },
-    "order_mode": {
-      "type": "select",
-      "options": ["added", "random", "custom"],
-      "default": "added",
-      "label": "Image Order",
-      "description": "How to order images in slideshow"
-    },
-    "crop_mode": {
-      "type": "select",
-      "options": ["smart_crop", "letterbox", "stretch"],
-      "default": "smart_crop",
-      "label": "Display Mode",
-      "description": "How to fit images to display"
+    "schema": {
+      "type": "object",
+      "properties": {
+        "slideshow_enabled": {
+          "type": "boolean",
+          "title": "Enable Slideshow",
+          "description": "Automatically rotate through images"
+        },
+        "order_mode": {
+          "type": "string",
+          "enum": ["added", "random", "custom"],
+          "title": "Image Order",
+          "description": "How to order images in slideshow"
+        },
+        "crop_mode": {
+          "type": "string",
+          "enum": ["smart_crop", "letterbox", "stretch"],
+          "title": "Display Mode",
+          "description": "How to fit images to display"
+        }
+      }
     }
   },
   "assets": [
@@ -71,12 +74,5 @@
       "name": "logo",
       "url": "/api/channels/com.epaperframe.photoframe/assets/logo.svg"
     }
-  ],
-  "capabilities": {
-    "supports_orientations": ["landscape", "portrait"],
-    "supports_resolutions": ["any"],
-    "requires_network": false,
-    "storage_type": "local",
-    "update_triggers": ["time_based", "manual"]
-  }
+  ]
 }
