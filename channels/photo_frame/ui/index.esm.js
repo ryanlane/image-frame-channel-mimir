@@ -1,8 +1,14 @@
 // x-photo-frame-card Web Component for Mimir Platform v2.4
 class XPhotoFrameCard extends HTMLElement {
   constructor() {
-            img.src = `/api/channels/com.epaperframe.photoframe/image?t=${Date.now()}`;   super();
+    super();
     this.attachShadow({ mode: 'open' });
+    this.apiBaseUrl = this.getApiBaseUrl();
+  }
+
+  getApiBaseUrl() {
+    // Use the server base URL provided by the host platform
+    return window.mimirServerBaseUrl || window.location.origin;
   }
 
   connectedCallback() {
@@ -88,7 +94,7 @@ class XPhotoFrameCard extends HTMLElement {
       </style>
       <div class="photo-frame-card">
         <img 
-          src="/api/channels/com.epaperframe.photoframe/image?t=${Date.now()}" 
+          src="${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/image?t=${Date.now()}" 
           alt="Current Photo" 
           class="photo-frame-image"
           onerror="this.style.display='none'"
@@ -116,7 +122,7 @@ class XPhotoFrameCard extends HTMLElement {
 
   async refreshImage() {
     try {
-      const response = await fetch('/api/channels/com.epaperframe.photoframe/test', {
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/test`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -125,7 +131,7 @@ class XPhotoFrameCard extends HTMLElement {
         // Refresh the image by updating the src with a new timestamp
         const img = this.shadowRoot.querySelector('.photo-frame-image');
         if (img) {
-          img.src = `/api/channels/com.epaperframe.photoframe/image?t=${Date.now()}`;
+          img.src = `${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/image?t=${Date.now()}`;
         }
         
         // Emit event to notify host of update

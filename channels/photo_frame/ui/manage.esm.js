@@ -5,6 +5,12 @@ class XPhotoFrameManager extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this.images = [];
     this.settings = {};
+    this.apiBaseUrl = this.getApiBaseUrl();
+  }
+
+  getApiBaseUrl() {
+    // Use the server base URL provided by the host platform
+    return window.mimirServerBaseUrl || window.location.origin;
   }
 
   async connectedCallback() {
@@ -16,13 +22,13 @@ class XPhotoFrameManager extends HTMLElement {
   async loadData() {
     try {
       // Load images
-      const imagesRes = await fetch('/api/channels/com.epaperframe.photoframe/images', {
+      const imagesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images`, {
         credentials: 'include'
       });
       this.images = await imagesRes.json();
 
       // Load settings
-      const settingsRes = await fetch('/api/channels/com.epaperframe.photoframe/settings', {
+      const settingsRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, {
         credentials: 'include'
       });
       this.settings = await settingsRes.json();
@@ -223,7 +229,7 @@ class XPhotoFrameManager extends HTMLElement {
           ${this.images.map(img => `
             <div class="image-card" data-id="${img.id}">
               <div class="image-preview">
-                <img src="/api/channels/com.epaperframe.photoframe/assets/uploads/${img.filename}" 
+                <img src="${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${img.filename}" 
                      alt="${img.title || img.original_name}" 
                      onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhmOWZhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzZjNzU3ZCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIG5vdCBmb3VuZDwvdGV4dD48L3N2Zz4='" />
                 <div class="image-overlay">
@@ -293,7 +299,7 @@ class XPhotoFrameManager extends HTMLElement {
     }
 
     try {
-      const response = await fetch('/api/channels/com.epaperframe.photoframe/upload', {
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/upload`, {
         method: 'POST',
         body: formData,
         credentials: 'include'
@@ -317,7 +323,7 @@ class XPhotoFrameManager extends HTMLElement {
     };
 
     try {
-      const response = await fetch('/api/channels/com.epaperframe.photoframe/settings', {
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -336,7 +342,7 @@ class XPhotoFrameManager extends HTMLElement {
 
   async toggleImage(imageId) {
     try {
-      const response = await fetch(`/api/channels/com.epaperframe.photoframe/images/${imageId}/toggle`, {
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/${imageId}/toggle`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -352,7 +358,7 @@ class XPhotoFrameManager extends HTMLElement {
   async deleteImage(imageId) {
     if (confirm('Are you sure you want to delete this image?')) {
       try {
-        const response = await fetch(`/api/channels/com.epaperframe.photoframe/images/${imageId}`, {
+        const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/${imageId}`, {
           method: 'DELETE',
           credentials: 'include'
         });
