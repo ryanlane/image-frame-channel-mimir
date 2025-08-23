@@ -26,6 +26,15 @@ A comprehensive digital photo frame implementation for Mimir Platform v2.4, feat
 - **Image Processing**: Automatic thumbnail generation and optimization
 - **WebSocket Integration**: Real-time updates and synchronization
 
+## 📖 Documentation
+
+**Complete documentation is available at:** [github.com/ryanlane/mimir-documentation](https://github.com/ryanlane/mimir-documentation)
+
+- **[Photo Frame Channel Specification](https://github.com/ryanlane/mimir-documentation/blob/main/PHOTO_FRAME_CHANNEL_SPECIFICATION.md)** - Complete technical specification
+- **[Channel Architecture](https://github.com/ryanlane/mimir-documentation/blob/main/CHANNEL_ARCHITECTURE.md)** - Channel system v2.4 architecture
+- **[API Documentation](https://github.com/ryanlane/mimir-documentation/blob/main/API_DOCUMENTATION.md)** - Photo Frame API endpoints
+- **[Frontend Integration Guide](https://github.com/ryanlane/mimir-documentation/blob/main/FRONTEND_INTEGRATION_GUIDE.md)** - Web Components integration
+
 ## Installation
 
 ### Prerequisites
