@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Tuple, Dict, Any, Optional, List
 from pathlib import Path
@@ -18,10 +19,66 @@ except ImportError:
     from utils.image_processor import ImageProcessor
     from utils.database import PhotoFrameDB
 
-class PhotoFrameChannel:
+# BaseChannel interface for Mimir Platform integration
+class BaseChannel:
     """
-    Photo Frame channel for Mimir Platform v2.4
-    Provides digital photo frame functionality with intelligent image management
+    Abstract base class for Mimir Platform channels with sub-channel support
+    """
+    
+    def supports_subchannels(self) -> bool:
+        """Return whether this channel supports sub-channels"""
+        return False
+    
+    def get_subchannel_config(self) -> Dict[str, Any]:
+        """Get sub-channel configuration"""
+        return {"enabled": False}
+    
+    def get_subchannels(self) -> List[Dict[str, Any]]:
+        """Get list of sub-channels"""
+        return []
+    
+    def create_subchannel(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new sub-channel"""
+        raise NotImplementedError("Channel does not support sub-channels")
+    
+    def update_subchannel(self, subchannel_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing sub-channel"""
+        raise NotImplementedError("Channel does not support sub-channels")
+    
+    def delete_subchannel(self, subchannel_id: str) -> bool:
+        """Delete a sub-channel"""
+        raise NotImplementedError("Channel does not support sub-channels")
+    
+    def assign_content_to_subchannel(self, subchannel_id: str, content_ids: List[str], action: str = "add") -> bool:
+        """Assign content to a sub-channel"""
+        raise NotImplementedError("Channel does not support sub-channels")
+    
+    def get_subchannel_content(self, subchannel_id: str, limit: int = None, offset: int = None) -> Dict[str, Any]:
+        """Get content from a sub-channel"""
+        raise NotImplementedError("Channel does not support sub-channels")
+    
+    def _generate_subchannel_id(self, name: str) -> str:
+        """Generate unique ID from name"""
+        # Clean the name
+        clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).lower()
+        base_id = re.sub(r'\s+', '_', clean_name.strip())
+        
+        # Check for duplicates in sub-channels
+        existing_ids = {subchannel['id'] for subchannel in self.get_subchannels()}
+        
+        if base_id not in existing_ids:
+            return base_id
+        
+        # Add suffix for duplicates
+        counter = 1
+        while f"{base_id}_{counter}" in existing_ids:
+            counter += 1
+        return f"{base_id}_{counter}"
+
+class PhotoFrameChannel(BaseChannel):
+    """
+    Photo Frame channel for Mimir Platform v2.4+ with Gallery Support
+    Provides digital photo frame functionality with intelligent image management and galleries
     """
     
     def __init__(self, channel_dir: str):
@@ -36,6 +93,10 @@ class PhotoFrameChannel:
             thumb_dir=self.channel_dir / "data" / "thumbs"
         )
         
+        # Gallery management
+        self.galleries_file = self.channel_dir / "data" / "galleries.json"
+        self._galleries = self._load_galleries()
+        
         # State tracking
         self.last_update = None
         self.last_error = None
@@ -48,6 +109,19 @@ class PhotoFrameChannel:
         """Load channel configuration"""
         with open(self.config_path, 'r') as f:
             return json.load(f)
+    
+    def _load_galleries(self) -> List[Dict[str, Any]]:
+        """Load galleries (sub-channels) configuration"""
+        if self.galleries_file.exists():
+            with open(self.galleries_file, 'r') as f:
+                return json.load(f)
+        return []
+    
+    def _save_galleries(self):
+        """Save galleries configuration"""
+        self.galleries_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.galleries_file, 'w') as f:
+            json.dump(self._galleries, f, indent=2)
     
     def _ensure_directories(self):
         """Create necessary directories"""
@@ -114,10 +188,16 @@ class PhotoFrameChannel:
     #         return await self._get_fallback_image()
     
     
-    async def render_image(self, resolution: tuple, orientation: str = "landscape", settings: dict = None):
+    async def render_image(self, resolution: tuple, orientation: str = "landscape", settings: dict = None, subchannel_id: str = None):
         """
         Render image for specific display resolution using resolution-based folder structure.
         Creates images in current/{width}x{height}/ subfolders for efficient sharing.
+        
+        Args:
+            resolution: (width, height) in pixels
+            orientation: "landscape" or "portrait"
+            settings: User configuration from Mimir Platform
+            subchannel_id: Optional gallery ID to select from
         """
         try:
             # Create resolution-specific directory
@@ -130,12 +210,22 @@ class PhotoFrameChannel:
             output_path = resolution_dir / "current.jpg"
             
             print(f"🎯 Rendering image for photo frame at resolution {width}x{height}")
+            if subchannel_id:
+                print(f"📁 Using gallery: {subchannel_id}")
             
             # Get current settings
             current_settings = settings or {}
             
-            # Get next image based on slideshow settings (this implements rotation logic)
-            image_record = await self._get_next_image(current_settings)
+            # Get next image based on gallery selection or all images
+            if subchannel_id:
+                gallery = self._find_gallery(subchannel_id)
+                if gallery:
+                    image_record = await self._get_next_image_from_gallery(gallery, current_settings)
+                else:
+                    print(f"⚠️ Gallery '{subchannel_id}' not found, using all images")
+                    image_record = await self._get_next_image(current_settings)
+            else:
+                image_record = await self._get_next_image(current_settings)
             
             if not image_record:
                 # No images available, use placeholder
@@ -604,3 +694,203 @@ class PhotoFrameChannel:
         """Render a simple fallback version of an image"""
         # Simple implementation for fallback
         return self.config["placeholder_image"]
+    
+    # =============================================================================
+    # Gallery (Sub-Channel) Support Methods
+    # =============================================================================
+    
+    def supports_subchannels(self) -> bool:
+        """Returns True - this channel supports galleries"""
+        return True
+    
+    def get_subchannel_config(self) -> Dict[str, Any]:
+        """Get sub-channel configuration"""
+        return {
+            "enabled": True,
+            "label": "Gallery",
+            "labelPlural": "Galleries",
+            "description": "Organize photos into themed collections",
+            "supports_tagging": True,
+            "supports_multiple_membership": True,
+            "allowCustom": True,
+            "contentType": "image",
+            "maxSubChannels": 50,
+            "examples": [
+                {"name": "Family Photos", "description": "Pictures of family members"},
+                {"name": "Vacation 2024", "description": "Travel photos from this year"},
+                {"name": "Nature", "description": "Landscape and wildlife photography"},
+                {"name": "Portraits", "description": "Professional and casual portraits"}
+            ]
+        }
+    
+    def get_subchannels(self) -> List[Dict[str, Any]]:
+        """Get all galleries (sub-channels)"""
+        return self._galleries.copy()
+    
+    def create_subchannel(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new gallery"""
+        if "name" not in data:
+            raise ValueError("Gallery name is required")
+        
+        gallery_id = self._generate_subchannel_id(data["name"])
+        
+        gallery = {
+            "id": gallery_id,
+            "name": data["name"],
+            "description": data.get("description", ""),
+            "contentIds": [],
+            "tags": data.get("tags", []),
+            "created": datetime.now(timezone.utc).isoformat(),
+            "modified": datetime.now(timezone.utc).isoformat(),
+            "imageCount": 0,
+            "coverImageId": None
+        }
+        
+        self._galleries.append(gallery)
+        self._save_galleries()
+        
+        return gallery
+    
+    def update_subchannel(self, subchannel_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing gallery"""
+        for i, gallery in enumerate(self._galleries):
+            if gallery["id"] == subchannel_id:
+                # Update allowed fields
+                if "name" in data:
+                    gallery["name"] = data["name"]
+                if "description" in data:
+                    gallery["description"] = data["description"]
+                if "tags" in data:
+                    gallery["tags"] = data["tags"]
+                
+                gallery["modified"] = datetime.now(timezone.utc).isoformat()
+                self._save_galleries()
+                return gallery
+        
+        raise ValueError(f"Gallery '{subchannel_id}' not found")
+    
+    def delete_subchannel(self, subchannel_id: str) -> bool:
+        """Delete a gallery (removes gallery but keeps images)"""
+        for i, gallery in enumerate(self._galleries):
+            if gallery["id"] == subchannel_id:
+                del self._galleries[i]
+                self._save_galleries()
+                return True
+        
+        raise ValueError(f"Gallery '{subchannel_id}' not found")
+    
+    def assign_content_to_subchannel(
+        self, 
+        subchannel_id: str, 
+        content_ids: List[str], 
+        action: str = "add"
+    ) -> bool:
+        """Assign images to a gallery"""
+        gallery = self._find_gallery(subchannel_id)
+        if not gallery:
+            raise ValueError(f"Gallery '{subchannel_id}' not found")
+        
+        # Validate that content_ids are valid image IDs
+        valid_image_ids = {str(img["id"]) for img in self.db.get_all_images()}
+        invalid_ids = set(content_ids) - valid_image_ids
+        if invalid_ids:
+            raise ValueError(f"Invalid image IDs: {', '.join(invalid_ids)}")
+        
+        if action == "set":
+            gallery["contentIds"] = content_ids.copy()
+        elif action == "add":
+            # Add new images, avoid duplicates
+            for content_id in content_ids:
+                if content_id not in gallery["contentIds"]:
+                    gallery["contentIds"].append(content_id)
+        elif action == "remove":
+            gallery["contentIds"] = [
+                c for c in gallery["contentIds"] if c not in content_ids
+            ]
+        else:
+            raise ValueError(f"Invalid action '{action}'. Use 'set', 'add', or 'remove'")
+        
+        # Update metadata
+        gallery["imageCount"] = len(gallery["contentIds"])
+        gallery["modified"] = datetime.now(timezone.utc).isoformat()
+        
+        # Set cover image if none exists and we have images
+        if gallery["contentIds"] and not gallery["coverImageId"]:
+            gallery["coverImageId"] = gallery["contentIds"][0]
+        
+        self._save_galleries()
+        return True
+    
+    def get_subchannel_content(
+        self, 
+        subchannel_id: str, 
+        limit: int = None, 
+        offset: int = None
+    ) -> Dict[str, Any]:
+        """Get images in a gallery with pagination"""
+        gallery = self._find_gallery(subchannel_id)
+        if not gallery:
+            raise ValueError(f"Gallery '{subchannel_id}' not found")
+        
+        content_ids = gallery["contentIds"]
+        total_count = len(content_ids)
+        
+        # Apply pagination
+        if offset:
+            content_ids = content_ids[offset:]
+        if limit:
+            content_ids = content_ids[:limit]
+        
+        # Get detailed image data
+        images = []
+        for content_id in content_ids:
+            image_data = self.db.get_image_by_id(int(content_id))
+            if image_data:
+                images.append({
+                    "id": str(image_data["id"]),
+                    "name": image_data.get("title", image_data["original_name"]),
+                    "filename": image_data["filename"],
+                    "thumbnailUrl": f"/api/channels/{self.id}/data/thumbs/{image_data['filename']}",
+                    "uploadUrl": f"/api/channels/{self.id}/assets/uploads/{image_data['filename']}",
+                    "enabled": image_data["enabled"],
+                    "uploaded": image_data["upload_time"],
+                    "description": image_data.get("description", ""),
+                    "tags": image_data.get("tags", [])
+                })
+        
+        return {
+            "content": images,
+            "totalCount": total_count,
+            "limit": limit,
+            "offset": offset or 0
+        }
+    
+    def _find_gallery(self, gallery_id: str) -> Optional[Dict[str, Any]]:
+        """Find a gallery by ID"""
+        for gallery in self._galleries:
+            if gallery["id"] == gallery_id:
+                return gallery
+        return None
+    
+    async def _get_next_image_from_gallery(
+        self, 
+        gallery: Dict[str, Any], 
+        settings: Dict[str, Any] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Get next image from a specific gallery"""
+        if not gallery["contentIds"]:
+            return None
+        
+        # Get image data for images in this gallery
+        gallery_images = []
+        for content_id in gallery["contentIds"]:
+            image_data = self.db.get_image_by_id(int(content_id))
+            if image_data and image_data["enabled"]:
+                gallery_images.append(image_data)
+        
+        if gallery_images:
+            # TODO: Implement proper rotation logic based on settings
+            # For now, return first available image
+            return gallery_images[0]
+        
+        return None
