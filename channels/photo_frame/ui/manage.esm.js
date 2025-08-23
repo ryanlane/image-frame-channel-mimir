@@ -6,6 +6,8 @@ class XPhotoFrameManager extends HTMLElement {
     this.images = [];
     this.settings = {};
     this.apiBaseUrl = this.getApiBaseUrl();
+    this.uploadAreaCollapsed = true;
+    this.dragCounter = 0; // Track drag events for proper expand/collapse
   }
 
   getApiBaseUrl() {
@@ -77,7 +79,20 @@ class XPhotoFrameManager extends HTMLElement {
           margin-bottom: 24px;
           background: #ffffff;
           cursor: pointer;
-          transition: border-color 0.2s;
+          transition: all 0.3s ease;
+          overflow: hidden;
+        }
+        .upload-area.collapsed {
+          max-height: 60px;
+          padding: 20px 40px;
+        }
+        .upload-area.collapsed .upload-content {
+          display: none;
+        }
+        .upload-area.collapsed::before {
+          content: "📤 Upload Images (click to expand)";
+          color: #6c757d;
+          font-size: 0.9rem;
         }
         .upload-area:hover {
           border-color: #007bff;
@@ -124,9 +139,18 @@ class XPhotoFrameManager extends HTMLElement {
           box-shadow: 0 1px 4px rgba(0,0,0,0.1);
           padding: 16px;
           transition: transform 0.2s;
+          cursor: move;
         }
         .image-card:hover {
           transform: translateY(-2px);
+        }
+        .image-card.dragging {
+          opacity: 0.5;
+          transform: rotate(5deg);
+        }
+        .image-card.drag-over {
+          border: 2px dashed #007bff;
+          background: #f0f8ff;
         }
         .image-preview {
           position: relative;
@@ -154,6 +178,7 @@ class XPhotoFrameManager extends HTMLElement {
           padding: 6px;
           cursor: pointer;
           font-size: 14px;
+          pointer-events: auto;
         }
         .btn-icon:hover {
           background: rgba(0,0,0,0.9);
@@ -213,8 +238,11 @@ class XPhotoFrameManager extends HTMLElement {
               <select id="order-mode">
                 <option value="added" ${this.getSettingValue('order_mode', 'added') === 'added' ? 'selected' : ''}>Date Added</option>
                 <option value="random" ${this.getSettingValue('order_mode', 'added') === 'random' ? 'selected' : ''}>Random</option>
-                <option value="custom" ${this.getSettingValue('order_mode', 'added') === 'custom' ? 'selected' : ''}>Custom Order</option>
+                <option value="custom" ${this.getSettingValue('order_mode', 'added') === 'custom' ? 'selected' : ''}>As shown below</option>
               </select>
+              <small style="color: #6c757d; font-size: 0.8rem; margin-top: 4px;">
+                ${this.getSettingValue('order_mode', 'added') === 'custom' ? 'Drag images below to reorder them' : ''}
+              </small>
             </div>
             <div class="setting-group">
               <label>Display Mode</label>
@@ -222,14 +250,6 @@ class XPhotoFrameManager extends HTMLElement {
                 <option value="smart_crop" ${this.getSettingValue('crop_mode', 'smart_crop') === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
                 <option value="letterbox" ${this.getSettingValue('crop_mode', 'smart_crop') === 'letterbox' ? 'selected' : ''}>Letterbox</option>
                 <option value="stretch" ${this.getSettingValue('crop_mode', 'smart_crop') === 'stretch' ? 'selected' : ''}>Stretch</option>
-              </select>
-            </div>
-            <div class="setting-group">
-              <label>Transition Effect</label>
-              <select id="transition-effect">
-                <option value="fade" ${this.getSettingValue('transition_effect', 'fade') === 'fade' ? 'selected' : ''}>Fade</option>
-                <option value="slide" ${this.getSettingValue('transition_effect', 'fade') === 'slide' ? 'selected' : ''}>Slide</option>
-                <option value="none" ${this.getSettingValue('transition_effect', 'fade') === 'none' ? 'selected' : ''}>None</option>
               </select>
             </div>
             <div class="setting-group">
@@ -248,8 +268,8 @@ class XPhotoFrameManager extends HTMLElement {
           </div>
         </div>
 
-        <div class="upload-area" id="upload-area">
-          <div>
+        <div class="upload-area ${this.uploadAreaCollapsed ? 'collapsed' : ''}" id="upload-area">
+          <div class="upload-content">
             <p><strong>Drop images here or click to upload</strong></p>
             <p>Supported formats: JPG, PNG, GIF</p>
           </div>
@@ -257,17 +277,32 @@ class XPhotoFrameManager extends HTMLElement {
         </div>
 
         <div class="image-grid">
-          ${this.images.map(img => `
-            <div class="image-card" data-id="${img.id}">
+          ${this.getSettingValue('order_mode', 'added') === 'custom' ? '<p style="color: #6c757d; font-size: 0.9rem; margin-bottom: 16px; text-align: center;">💡 Drag and drop images below to change their display order</p>' : ''}
+          ${this.images
+            .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+            .map(img => `
+            <div class="image-card" 
+                 data-id="${img.id}" 
+                 draggable="true"
+                 ondragstart="this.getRootNode().host.handleDragStart(event)"
+                 ondragend="this.getRootNode().host.handleDragEnd(event)"
+                 ondragover="this.getRootNode().host.handleDragOver(event)"
+                 ondrop="this.getRootNode().host.handleDrop(event)">
               <div class="image-preview">
                 <img src="${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${img.filename}" 
                      alt="${img.title || img.original_name}" 
                      onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhmOWZhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzZjNzU3ZCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIG5vdCBmb3VuZDwvdGV4dD48L3N2Zz4='" />
                 <div class="image-overlay">
-                  <button class="btn-icon" onclick="this.getRootNode().host.toggleImage(${img.id})" title="${img.enabled ? 'Disable' : 'Enable'}">
+                  <button class="btn-icon" 
+                          onclick="this.getRootNode().host.toggleImage(${img.id})" 
+                          onmousedown="event.stopPropagation()"
+                          title="${img.enabled ? 'Disable' : 'Enable'}">
                     ${img.enabled ? '👁️' : '🚫'}
                   </button>
-                  <button class="btn-icon" onclick="this.getRootNode().host.deleteImage(${img.id})" title="Delete">
+                  <button class="btn-icon" 
+                          onclick="this.getRootNode().host.deleteImage(${img.id})" 
+                          onmousedown="event.stopPropagation()"
+                          title="Delete">
                     🗑️
                   </button>
                 </div>
@@ -291,7 +326,49 @@ class XPhotoFrameManager extends HTMLElement {
     const uploadArea = this.shadowRoot.getElementById('upload-area');
     const fileInput = this.shadowRoot.getElementById('file-input');
 
-    uploadArea.addEventListener('click', () => fileInput.click());
+    // Upload area click to expand or trigger file input
+    uploadArea.addEventListener('click', () => {
+      if (this.uploadAreaCollapsed) {
+        this.uploadAreaCollapsed = false;
+        this.render();
+        this.attachEventListeners();
+      } else {
+        fileInput.click();
+      }
+    });
+    
+    // Global drag events to handle upload area expansion
+    document.addEventListener('dragenter', (e) => {
+      if (e.dataTransfer.types.includes('Files')) {
+        this.dragCounter++;
+        if (this.uploadAreaCollapsed) {
+          this.uploadAreaCollapsed = false;
+          this.render();
+          this.attachEventListeners();
+        }
+      }
+    });
+
+    document.addEventListener('dragleave', (e) => {
+      if (e.dataTransfer.types.includes('Files')) {
+        this.dragCounter--;
+        if (this.dragCounter === 0) {
+          setTimeout(() => {
+            if (this.dragCounter === 0) {
+              this.uploadAreaCollapsed = true;
+              this.render();
+              this.attachEventListeners();
+            }
+          }, 100);
+        }
+      }
+    });
+
+    document.addEventListener('drop', (e) => {
+      if (e.dataTransfer.types.includes('Files')) {
+        this.dragCounter = 0;
+      }
+    });
     
     uploadArea.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -317,7 +394,6 @@ class XPhotoFrameManager extends HTMLElement {
       'slideshow-enabled', 
       'order-mode', 
       'crop-mode', 
-      'transition-effect',
       'update-interval-unit', 
       'update-interval-value'
     ];
@@ -358,7 +434,6 @@ class XPhotoFrameManager extends HTMLElement {
       slideshow_enabled: this.shadowRoot.getElementById('slideshow-enabled').value === 'true',
       order_mode: this.shadowRoot.getElementById('order-mode').value,
       crop_mode: this.shadowRoot.getElementById('crop-mode').value,
-      transition_effect: this.shadowRoot.getElementById('transition-effect').value,
       update_interval_unit: this.shadowRoot.getElementById('update-interval-unit').value,
       update_interval_value: parseInt(this.shadowRoot.getElementById('update-interval-value').value)
     };
@@ -417,6 +492,77 @@ class XPhotoFrameManager extends HTMLElement {
     await this.loadData();
     this.render();
     this.attachEventListeners();
+  }
+
+  // Drag and drop methods for image reordering
+  handleDragStart(event) {
+    const card = event.target.closest('.image-card');
+    card.classList.add('dragging');
+    event.dataTransfer.setData('text/plain', card.dataset.id);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  handleDragEnd(event) {
+    const card = event.target.closest('.image-card');
+    card.classList.remove('dragging');
+    
+    // Remove drag-over class from all cards
+    this.shadowRoot.querySelectorAll('.image-card').forEach(c => {
+      c.classList.remove('drag-over');
+    });
+  }
+
+  handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    
+    const card = event.target.closest('.image-card');
+    if (card && !card.classList.contains('dragging')) {
+      card.classList.add('drag-over');
+    }
+  }
+
+  async handleDrop(event) {
+    event.preventDefault();
+    
+    const draggedId = event.dataTransfer.getData('text/plain');
+    const targetCard = event.target.closest('.image-card');
+    
+    if (!targetCard || targetCard.dataset.id === draggedId) {
+      return;
+    }
+
+    const targetId = targetCard.dataset.id;
+    
+    // Update the order
+    await this.updateImageOrder(draggedId, targetId);
+    
+    // Clean up
+    targetCard.classList.remove('drag-over');
+  }
+
+  async updateImageOrder(draggedId, targetId) {
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/reorder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          dragged_id: parseInt(draggedId),
+          target_id: parseInt(targetId)
+        }),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        await this.refreshData();
+      } else {
+        console.error('Failed to update image order:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error updating image order:', error);
+    }
   }
 }
 

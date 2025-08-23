@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Frame Manager Test</title>
+</head>
+<body>
+    <h1>Photo Frame Manager Test</h1>
+    <x-photo-frame-manager></x-photo-frame-manager>
+    
+    <script>
+        // Mock the server base URL for testing
+        window.mimirServerBaseUrl = 'http://localhost:5000';
+        
+        // Mock fetch for testing (you can remove this when testing with real backend)
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            console.log('Mock fetch called:', url, options);
+            
+            if (url.includes('/images') && !url.includes('/reorder')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([
+                        {
+                            id: 1,
+                            filename: 'test1.jpg',
+                            original_name: 'Test Image 1',
+                            title: 'Test Image 1',
+                            description: 'A test image',
+                            width: 800,
+                            height: 600,
+                            enabled: true,
+                            sort_order: 0,
+                            times_shown: 5
+                        },
+                        {
+                            id: 2,
+                            filename: 'test2.jpg',
+                            original_name: 'Test Image 2',
+                            title: 'Test Image 2',
+                            description: 'Another test image',
+                            width: 1024,
+                            height: 768,
+                            enabled: true,
+                            sort_order: 1,
+                            times_shown: 3
+                        }
+                    ])
+                });
+            }
+            
+            if (url.includes('/settings')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        slideshow_enabled: { type: "boolean", value: true },
+                        order_mode: { type: "string", value: "custom" },
+                        crop_mode: { type: "string", value: "smart_crop" },
+                        update_interval_unit: { type: "string", value: "minutes" },
+                        update_interval_value: { type: "integer", value: 30 }
+                    })
+                });
+            }
+            
+            return originalFetch(url, options);
+        };
+    </script>
+    <script type="module" src="manage.esm.js"></script>
+</body>
+</html>

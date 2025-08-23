@@ -40,9 +40,15 @@ class PhotoFrameDB:
     def add_image(self, image_data: Dict[str, Any]) -> int:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
-        c.execute('''INSERT INTO images (filename, original_name, width, height, enabled)
-            VALUES (?, ?, ?, ?, ?)''',
-            (image_data["filename"], image_data["original_name"], image_data["width"], image_data["height"], True))
+        
+        # Get the highest sort_order and increment
+        c.execute('SELECT MAX(sort_order) FROM images')
+        max_order = c.fetchone()[0] or 0
+        next_order = max_order + 1
+        
+        c.execute('''INSERT INTO images (filename, original_name, width, height, enabled, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?)''',
+            (image_data["filename"], image_data["original_name"], image_data["width"], image_data["height"], True, next_order))
         conn.commit()
         image_id = c.lastrowid
         conn.close()
@@ -61,7 +67,7 @@ class PhotoFrameDB:
     def get_all_images(self) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
-        c.execute('SELECT * FROM images')
+        c.execute('SELECT * FROM images ORDER BY sort_order, created_at')
         rows = c.fetchall()
         conn.close()
         return [dict(zip([d[0] for d in c.description], row)) for row in rows]
@@ -69,7 +75,7 @@ class PhotoFrameDB:
     def get_enabled_images(self) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
-        c.execute('SELECT * FROM images WHERE enabled=1')
+        c.execute('SELECT * FROM images WHERE enabled=1 ORDER BY sort_order, created_at')
         rows = c.fetchall()
         conn.close()
         return [dict(zip([d[0] for d in c.description], row)) for row in rows]
