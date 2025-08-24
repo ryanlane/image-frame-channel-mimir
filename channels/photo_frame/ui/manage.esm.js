@@ -38,12 +38,28 @@ class XPhotoFrameManager extends HTMLElement {
         fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, { credentials: 'include' })
       ]);
 
-      this.state.galleries = await galleriesRes.json();
-      this.state.allImages = await imagesRes.json();
-      this.state.settings = await settingsRes.json();
+      // Parse responses with error handling
+      const galleriesData = galleriesRes.ok ? await galleriesRes.json() : [];
+      const imagesData = imagesRes.ok ? await imagesRes.json() : [];
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+
+      // Ensure galleries is always an array
+      this.state.galleries = Array.isArray(galleriesData) ? galleriesData : [];
+      this.state.allImages = Array.isArray(imagesData) ? imagesData : [];
+      this.state.settings = settingsData || {};
+
+      console.log('Loaded data:', {
+        galleries: this.state.galleries.length,
+        images: this.state.allImages.length,
+        settings: Object.keys(this.state.settings).length
+      });
 
     } catch (error) {
       console.error('Failed to load initial data:', error);
+      // Set safe defaults
+      this.state.galleries = [];
+      this.state.allImages = [];
+      this.state.settings = {};
     }
   }
 
@@ -207,6 +223,13 @@ class XPhotoFrameManager extends HTMLElement {
     const gridContainer = this.shadowRoot.getElementById('gallery-grid');
     if (!gridContainer) return;
 
+    // Ensure galleries is an array before iterating
+    if (!Array.isArray(this.state.galleries)) {
+      console.warn('Galleries is not an array:', this.state.galleries);
+      this.state.galleries = [];
+      return;
+    }
+
     this.state.galleries.forEach(gallery => {
       const card = document.createElement('gallery-card');
       card.gallery = gallery;
@@ -221,6 +244,19 @@ class XPhotoFrameManager extends HTMLElement {
 
     const gallery = this.state.galleries.find(g => g.id === this.state.currentGalleryId);
     if (!gallery) return;
+
+    // Ensure allImages is an array and gallery has contentIds
+    if (!Array.isArray(this.state.allImages)) {
+      console.warn('AllImages is not an array:', this.state.allImages);
+      this.state.allImages = [];
+      return;
+    }
+
+    if (!Array.isArray(gallery.contentIds)) {
+      console.warn('Gallery contentIds is not an array:', gallery.contentIds);
+      gallery.contentIds = [];
+      return;
+    }
 
     const galleryImages = this.state.allImages.filter(img => gallery.contentIds.includes(img.id.toString()));
     
