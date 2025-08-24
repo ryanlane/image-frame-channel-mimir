@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Frame Gallery Manager</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+        }
+        .demo-header {
+            background: white;
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 0;
+        }
+        .demo-header h1 {
+            margin: 0;
+            color: #212529;
+        }
+        .demo-header p {
+            margin: 8px 0 0 0;
+            color: #6c757d;
+        }
+        .switch-view {
+            background: white;
+            padding: 12px 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .switch-btn {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #495057;
+            text-decoration: none;
+        }
+        .switch-btn:hover {
+            background: #e9ecef;
+        }
+        .switch-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-header">
+        <h1>📸 Photo Frame Gallery Manager</h1>
+        <p>Organize your photos into beautiful galleries</p>
+    </div>
+
+    <div class="switch-view">
+        <strong>View Mode:</strong>
+        <a href="#" class="switch-btn active" onclick="showGalleryManager()">Gallery Manager (New)</a>
+        <a href="#" class="switch-btn" onclick="showPhotoManager()">Photo Manager (Current)</a>
+    </div>
+
+    <!-- Gallery Manager (New Interface) -->
+    <div id="gallery-manager-container">
+        <x-gallery-manager></x-gallery-manager>
+    </div>
+
+    <!-- Photo Manager (Current Interface) -->
+    <div id="photo-manager-container" style="display: none;">
+        <x-photo-frame-manager></x-photo-frame-manager>
+    </div>
+
+    <script type="module">
+        // Set up the server base URL for testing
+        window.mimirServerBaseUrl = 'http://localhost:5000';
+        
+        // Import both components
+        import('./gallery-manager.esm.js');
+        import('./manage.esm.js');
+
+        // Mock API for demonstration
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            console.log('Mock API call:', url, options);
+            
+            // Mock galleries endpoint
+            if (url.includes('/subchannels') && !url.includes('/content')) {
+                if (options?.method === 'POST') {
+                    // Create gallery
+                    const body = JSON.parse(options.body);
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            id: 'gallery_' + Date.now(),
+                            name: body.name,
+                            description: body.description || '',
+                            contentIds: [],
+                            tags: body.tags || [],
+                            created: new Date().toISOString(),
+                            modified: new Date().toISOString(),
+                            imageCount: 0,
+                            coverImageId: null
+                        })
+                    });
+                }
+                
+                if (options?.method === 'PUT') {
+                    // Update gallery
+                    const body = JSON.parse(options.body);
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            id: url.split('/').pop(),
+                            name: body.name,
+                            description: body.description || '',
+                            contentIds: ['1', '2'],
+                            tags: body.tags || [],
+                            created: '2024-01-01T00:00:00Z',
+                            modified: new Date().toISOString(),
+                            imageCount: 2,
+                            coverImageId: '1'
+                        })
+                    });
+                }
+                
+                if (options?.method === 'DELETE') {
+                    // Delete gallery
+                    return Promise.resolve({ ok: true });
+                }
+                
+                // Get specific gallery
+                if (url.match(/\/subchannels\/[^\/]+$/)) {
+                    const galleryId = url.split('/').pop();
+                    const galleries = {
+                        'all_photos': {
+                            id: 'all_photos',
+                            name: 'All Photos',
+                            description: 'All photos in your collection',
+                            contentIds: ['1', '2', '3', '4', '5'],
+                            tags: ['default'],
+                            created: '2024-01-01T00:00:00Z',
+                            modified: '2024-01-01T00:00:00Z',
+                            imageCount: 5,
+                            coverImageId: '1'
+                        },
+                        'vacation_2024': {
+                            id: 'vacation_2024',
+                            name: 'Vacation 2024',
+                            description: 'Summer vacation photos from our trip to the mountains',
+                            contentIds: ['2', '4'],
+                            tags: ['vacation', 'travel', 'mountains'],
+                            created: '2024-06-15T00:00:00Z',
+                            modified: '2024-06-20T00:00:00Z',
+                            imageCount: 2,
+                            coverImageId: '2'
+                        }
+                    };
+                    
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve(galleries[galleryId] || galleries['all_photos'])
+                    });
+                }
+                
+                // Get all galleries
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([
+                        {
+                            id: 'all_photos',
+                            name: 'All Photos',
+                            description: 'All photos in your collection',
+                            contentIds: ['1', '2', '3', '4', '5'],
+                            tags: ['default'],
+                            created: '2024-01-01T00:00:00Z',
+                            modified: '2024-01-01T00:00:00Z',
+                            imageCount: 5,
+                            coverImageId: '1'
+                        },
+                        {
+                            id: 'vacation_2024',
+                            name: 'Vacation 2024',
+                            description: 'Summer vacation photos from our trip to the mountains',
+                            contentIds: ['2', '4'],
+                            tags: ['vacation', 'travel', 'mountains'],
+                            created: '2024-06-15T00:00:00Z',
+                            modified: '2024-06-20T00:00:00Z',
+                            imageCount: 2,
+                            coverImageId: '2'
+                        },
+                        {
+                            id: 'family_portraits',
+                            name: 'Family Portraits',
+                            description: 'Professional and casual family photos',
+                            contentIds: ['1', '3'],
+                            tags: ['family', 'portraits'],
+                            created: '2024-03-10T00:00:00Z',
+                            modified: '2024-03-15T00:00:00Z',
+                            imageCount: 2,
+                            coverImageId: '3'
+                        },
+                        {
+                            id: 'nature_photography',
+                            name: 'Nature Photography',
+                            description: 'Beautiful landscapes and wildlife shots',
+                            contentIds: ['5'],
+                            tags: ['nature', 'landscape', 'wildlife'],
+                            created: '2024-05-01T00:00:00Z',
+                            modified: '2024-05-01T00:00:00Z',
+                            imageCount: 1,
+                            coverImageId: '5'
+                        }
+                    ])
+                });
+            }
+            
+            // Mock gallery content endpoint
+            if (url.includes('/subchannels/') && url.includes('/content')) {
+                if (options?.method === 'POST') {
+                    // Assign content to gallery
+                    return Promise.resolve({ ok: true });
+                }
+                
+                // Get gallery content
+                const galleryId = url.split('/subchannels/')[1].split('/content')[0];
+                const allImages = [
+                    { id: '1', filename: 'family_photo.jpg', name: 'Family Photo', enabled: true, thumbnailUrl: '/api/channels/com.epaperframe.photoframe/data/thumbs/family_photo.jpg' },
+                    { id: '2', filename: 'mountain_view.jpg', name: 'Mountain View', enabled: true, thumbnailUrl: '/api/channels/com.epaperframe.photoframe/data/thumbs/mountain_view.jpg' },
+                    { id: '3', filename: 'portrait_mom.jpg', name: 'Portrait Mom', enabled: true, thumbnailUrl: '/api/channels/com.epaperframe.photoframe/data/thumbs/portrait_mom.jpg' },
+                    { id: '4', filename: 'sunset_lake.jpg', name: 'Sunset Lake', enabled: true, thumbnailUrl: '/api/channels/com.epaperframe.photoframe/data/thumbs/sunset_lake.jpg' },
+                    { id: '5', filename: 'wildlife_deer.jpg', name: 'Wildlife Deer', enabled: true, thumbnailUrl: '/api/channels/com.epaperframe.photoframe/data/thumbs/wildlife_deer.jpg' }
+                ];
+                
+                const galleryContent = {
+                    'all_photos': allImages,
+                    'vacation_2024': allImages.filter(img => ['2', '4'].includes(img.id)),
+                    'family_portraits': allImages.filter(img => ['1', '3'].includes(img.id)),
+                    'nature_photography': allImages.filter(img => ['5'].includes(img.id))
+                };
+                
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        content: galleryContent[galleryId] || [],
+                        totalCount: galleryContent[galleryId]?.length || 0
+                    })
+                });
+            }
+            
+            // Mock upload endpoint
+            if (url.includes('/upload')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        message: 'Upload successful',
+                        uploaded: [
+                            { id: Date.now(), filename: 'new_image.jpg', original_name: 'New Image' }
+                        ]
+                    })
+                });
+            }
+
+            // Mock images endpoint  
+            if (url.includes('/images') && !url.includes('/reorder')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([
+                        {
+                            id: 1,
+                            filename: 'family_photo.jpg',
+                            original_name: 'Family Photo',
+                            title: 'Family Photo',
+                            description: 'Beautiful family moment',
+                            width: 1920,
+                            height: 1080,
+                            enabled: true,
+                            upload_time: '2024-01-15T10:30:00Z',
+                            sort_order: 1
+                        },
+                        {
+                            id: 2,
+                            filename: 'mountain_view.jpg',
+                            original_name: 'Mountain View',
+                            title: 'Mountain View',
+                            description: 'Spectacular mountain landscape',
+                            width: 1920,
+                            height: 1080,
+                            enabled: true,
+                            upload_time: '2024-06-15T14:20:00Z',
+                            sort_order: 2
+                        },
+                        {
+                            id: 3,
+                            filename: 'portrait_mom.jpg',
+                            original_name: 'Portrait Mom',
+                            title: 'Portrait Mom',
+                            description: 'Professional portrait',
+                            width: 1080,
+                            height: 1350,
+                            enabled: true,
+                            upload_time: '2024-03-10T09:15:00Z',
+                            sort_order: 3
+                        },
+                        {
+                            id: 4,
+                            filename: 'sunset_lake.jpg',
+                            original_name: 'Sunset Lake',
+                            title: 'Sunset Lake',
+                            description: 'Beautiful sunset over the lake',
+                            width: 1920,
+                            height: 1080,
+                            enabled: true,
+                            upload_time: '2024-06-18T19:45:00Z',
+                            sort_order: 4
+                        },
+                        {
+                            id: 5,
+                            filename: 'wildlife_deer.jpg',
+                            original_name: 'Wildlife Deer',
+                            title: 'Wildlife Deer',
+                            description: 'Deer in the morning mist',
+                            width: 1920,
+                            height: 1080,
+                            enabled: true,
+                            upload_time: '2024-05-01T07:00:00Z',
+                            sort_order: 5
+                        }
+                    ])
+                });
+            }
+
+            // Mock settings endpoint
+            if (url.includes('/settings')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        slideshow_enabled: { type: 'boolean', value: true },
+                        order_mode: { type: 'string', value: 'added' },
+                        crop_mode: { type: 'string', value: 'smart_crop' },
+                        update_interval_unit: { type: 'string', value: 'minutes' },
+                        update_interval_value: { type: 'number', value: 30 }
+                    })
+                });
+            }
+
+            // For other requests, return empty success
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({})
+            });
+        };
+
+        // View switching functions
+        window.showGalleryManager = function() {
+            document.getElementById('gallery-manager-container').style.display = 'block';
+            document.getElementById('photo-manager-container').style.display = 'none';
+            document.querySelectorAll('.switch-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        };
+
+        window.showPhotoManager = function() {
+            document.getElementById('gallery-manager-container').style.display = 'none';
+            document.getElementById('photo-manager-container').style.display = 'block';
+            document.querySelectorAll('.switch-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        };
+    </script>
+</body>
+</html>

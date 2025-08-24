@@ -8,6 +8,21 @@ class XPhotoFrameManager extends HTMLElement {
     this.apiBaseUrl = this.getApiBaseUrl();
     this.uploadAreaCollapsed = true;
     this.dragCounter = 0; // Track drag events for proper expand/collapse
+    this.galleryId = null; // Gallery context
+    this.galleryInfo = null;
+  }
+
+  static get observedAttributes() {
+    return ['gallery-id'];
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (name === 'gallery-id') {
+      this.galleryId = newValue;
+      if (this.isConnected) {
+        this.loadData();
+      }
+    }
   }
 
   getApiBaseUrl() {
@@ -33,13 +48,39 @@ class XPhotoFrameManager extends HTMLElement {
 
   async loadData() {
     try {
-      // Load images
-      const imagesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images`, {
-        credentials: 'include'
-      });
-      this.images = await imagesRes.json();
+      if (this.galleryId) {
+        // Load gallery-specific content
+        const galleryRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.galleryId}`, {
+          credentials: 'include'
+        });
+        
+        if (galleryRes.ok) {
+          this.galleryInfo = await galleryRes.json();
+          
+          // Load gallery content
+          const contentRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.galleryId}/content`, {
+            credentials: 'include'
+          });
+          
+          if (contentRes.ok) {
+            const contentData = await contentRes.json();
+            this.images = contentData.content || [];
+          } else {
+            this.images = [];
+          }
+        } else {
+          console.error('Failed to load gallery info');
+          this.images = [];
+        }
+      } else {
+        // Load all images (original behavior)
+        const imagesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images`, {
+          credentials: 'include'
+        });
+        this.images = await imagesRes.json();
+      }
 
-      // Load settings
+      // Load settings (same for all galleries for now)
       const settingsRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, {
         credentials: 'include'
       });
@@ -90,7 +131,7 @@ class XPhotoFrameManager extends HTMLElement {
           display: none;
         }
         .upload-area.collapsed::before {
-          content: "📤 Upload Images (click to expand)";
+          content: "${this.galleryId ? '� Upload to Gallery (click to expand)' : '�📤 Upload Images (click to expand)'}";
           color: #6c757d;
           font-size: 0.9rem;
         }
@@ -217,7 +258,8 @@ class XPhotoFrameManager extends HTMLElement {
       </style>
       <div class="manager-container">
         <div class="header">
-          <h1>Photo Frame Management</h1>
+          <h1>${this.galleryInfo ? `📸 ${this.galleryInfo.name}` : 'Photo Frame Management'}</h1>
+          ${this.galleryInfo && this.galleryInfo.description ? `<p style="margin: 4px 0 0 0; color: #6c757d; font-size: 0.9rem;">${this.galleryInfo.description}</p>` : ''}
           <button class="btn-primary" onclick="this.getRootNode().host.refreshData()">
             Refresh
           </button>
@@ -272,6 +314,7 @@ class XPhotoFrameManager extends HTMLElement {
           <div class="upload-content">
             <p><strong>Drop images here or click to upload</strong></p>
             <p>Supported formats: JPG, PNG, GIF</p>
+            ${this.galleryId ? `<p style="color: #007bff; font-size: 0.85rem;">📸 Images will be added to this gallery</p>` : ''}
           </div>
           <input type="file" multiple accept="image/*" class="hidden" id="file-input">
         </div>
@@ -420,6 +463,29 @@ class XPhotoFrameManager extends HTMLElement {
       });
 
       if (response.ok) {
+        const uploadResult = await response.json();
+        
+        // If we're in a gallery context, assign the uploaded images to this gallery
+        if (this.galleryId && uploadResult.uploaded && uploadResult.uploaded.length > 0) {
+          const imageIds = uploadResult.uploaded.map(img => img.id.toString());
+          
+          try {
+            await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.galleryId}/content`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ 
+                content_ids: imageIds, 
+                action: 'add' 
+              })
+            });
+          } catch (assignError) {
+            console.error('Failed to assign images to gallery:', assignError);
+          }
+        }
+        
         await this.refreshData();
       } else {
         console.error('Upload failed:', response.statusText);
