@@ -3,18 +3,24 @@
     "id": "family_photos",
     "name": "Family Photos",
     "description": "Pictures of family members and gatherings",
-    "contentIds": ["1", "5"],
-    "tags": ["family", "personal"],
+    "contentIds": [
+      "1",
+      "5"
+    ],
+    "tags": [
+      "family",
+      "personal"
+    ],
     "created": "2024-08-23T10:00:00Z",
-    "modified": "2024-08-23T10:30:00Z",
+    "modified": "2025-08-24T18:28:35.970632+00:00",
     "imageCount": 2,
     "coverImageId": "1",
     "displaySettings": {
-      "order_mode": "added",
-      "crop_mode": "smart_crop",
+      "order_mode": "random",
+      "crop_mode": "letterbox",
       "transition_effect": "fade",
-      "update_interval_value": 30,
-      "update_interval_unit": "minutes",
+      "update_interval_value": 45,
+      "update_interval_unit": "seconds",
       "slideshow_enabled": true
     }
   },
@@ -22,8 +28,14 @@
     "id": "vacation_2024",
     "name": "Vacation 2024",
     "description": "Travel photos from summer vacation",
-    "contentIds": ["2"],
-    "tags": ["travel", "vacation", "2024"],
+    "contentIds": [
+      "2"
+    ],
+    "tags": [
+      "travel",
+      "vacation",
+      "2024"
+    ],
     "created": "2024-08-23T11:00:00Z",
     "modified": "2024-08-23T11:00:00Z",
     "imageCount": 1,
@@ -41,8 +53,14 @@
     "id": "nature_photography",
     "name": "Nature Photography",
     "description": "Landscape and wildlife photography",
-    "contentIds": ["3"],
-    "tags": ["nature", "landscape", "wildlife"],
+    "contentIds": [
+      "3"
+    ],
+    "tags": [
+      "nature",
+      "landscape",
+      "wildlife"
+    ],
     "created": "2024-08-23T12:00:00Z",
     "modified": "2024-08-23T12:00:00Z",
     "imageCount": 1,
