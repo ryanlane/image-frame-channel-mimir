@@ -408,6 +408,8 @@ class XPhotoFrameManager extends HTMLElement {
       }
     }
 
+    console.log('Uploading files:', files.length, 'valid images:', [...formData.entries()].length);
+
     try {
       const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/upload`, {
         method: 'POST',
@@ -415,18 +417,33 @@ class XPhotoFrameManager extends HTMLElement {
         credentials: 'include'
       });
 
+      console.log('Upload response status:', res.status);
+      
       if (res.ok) {
         const uploadResult = await res.json();
-        if (this.state.currentGalleryId && uploadResult.uploaded?.length > 0) {
-          const imageIds = uploadResult.uploaded.map(img => img.id.toString());
-          await this.assignImagesToGallery(imageIds);
+        console.log('Upload result:', uploadResult);
+        
+        // Check if the response has the expected structure
+        if (uploadResult.results && Array.isArray(uploadResult.results)) {
+          const successfulUploads = uploadResult.results.filter(r => r.success);
+          console.log('Successful uploads:', successfulUploads.length);
+          
+          if (this.state.currentGalleryId && successfulUploads.length > 0) {
+            const imageIds = successfulUploads.map(img => img.image_id.toString());
+            console.log('Assigning images to gallery:', imageIds);
+            await this.assignImagesToGallery(imageIds);
+          }
         }
+        
         await this.refreshData();
       } else {
-        console.error('Upload failed:', res.statusText);
+        const errorText = await res.text();
+        console.error('Upload failed with status:', res.status, 'Response:', errorText);
+        alert(`Upload failed: ${res.status} ${res.statusText}\n${errorText}`);
       }
     } catch (error) {
       console.error('Upload error:', error);
+      alert(`Upload error: ${error.message}`);
     }
   }
 
