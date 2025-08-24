@@ -424,7 +424,7 @@ class PhotoFrameChannel(BaseChannel):
             success = self.metadata.toggle_image_enabled(image_id)
             
             if success:
-                image = self.metadata.get_image(image_id)
+                image = self.metadata.get_image_by_id(image_id)
                 return JSONResponse({"success": True, "enabled": image["enabled"] if image else False})
             else:
                 raise HTTPException(status_code=404, detail="Image not found")
@@ -830,8 +830,8 @@ class PhotoFrameChannel(BaseChannel):
         if not settings.get("slideshow_enabled", True):
             # If slideshow disabled, return current image
             if self.current_image_id:
-                return self.metadata.get_image(str(self.current_image_id))
-            
+                return self.metadata.get_image_by_id(str(self.current_image_id))
+        
         order_mode = settings.get("order_mode", "added")
         all_images = self.metadata.get_all_images()
         enabled_images = [img for img in all_images if img.get("enabled", True)]
@@ -946,7 +946,7 @@ class PhotoFrameChannel(BaseChannel):
     
     async def _update_image_stats(self, image_id: str):
         """Update image display statistics"""
-        image = self.metadata.get_image(image_id)
+        image = self.metadata.get_image_by_id(image_id)
         if image:
             self.metadata.update_image(image_id, {
                 "times_shown": image.get("times_shown", 0) + 1,
@@ -1170,7 +1170,7 @@ class PhotoFrameChannel(BaseChannel):
         # Get detailed image data
         images = []
         for content_id in content_ids:
-            image_data = self.metadata.get_image(str(content_id))
+            image_data = self.metadata.get_image_by_id(str(content_id))
             if image_data:
                 images.append({
                     "id": str(image_data["id"]),
@@ -1274,7 +1274,7 @@ class PhotoFrameChannel(BaseChannel):
         # Get image data for images in this gallery
         gallery_images = []
         for content_id in gallery["contentIds"]:
-            image_data = self.metadata.get_image(str(content_id))
+            image_data = self.metadata.get_image_by_id(str(content_id))
             if image_data and image_data.get("enabled", True):
                 gallery_images.append(image_data)
         
