@@ -423,15 +423,22 @@ class XPhotoFrameManager extends HTMLElement {
         const uploadResult = await res.json();
         console.log('Upload result:', uploadResult);
         
-        // Check if the response has the expected structure
         if (uploadResult.results && Array.isArray(uploadResult.results)) {
           const successfulUploads = uploadResult.results.filter(r => r.success);
           console.log('Successful uploads:', successfulUploads.length);
           
           if (this.state.currentGalleryId && successfulUploads.length > 0) {
             const imageIds = successfulUploads.map(img => img.image_id.toString());
-            console.log('Assigning images to gallery:', imageIds);
-            await this.assignImagesToGallery(imageIds);
+            console.log('Assigning images to gallery:', this.state.currentGalleryId, imageIds);
+            try {
+              await this.assignImagesToGallery(imageIds);
+              console.log('Successfully assigned images to gallery');
+            } catch (assignError) {
+              console.error('Failed to assign images to gallery:', assignError);
+              alert(`Images uploaded but failed to assign to gallery: ${assignError.message}`);
+            }
+          } else if (!this.state.currentGalleryId) {
+            console.log('No current gallery selected, images uploaded but not assigned to any gallery');
           }
         }
         
@@ -448,15 +455,36 @@ class XPhotoFrameManager extends HTMLElement {
   }
 
   async assignImagesToGallery(imageIds) {
+    if (!this.state.currentGalleryId) {
+      throw new Error('No gallery selected for image assignment');
+    }
+    
+    if (!imageIds || imageIds.length === 0) {
+      throw new Error('No image IDs provided for assignment');
+    }
+    
     try {
-      await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.state.currentGalleryId}/content`, {
+      console.log('Assigning images to gallery:', this.state.currentGalleryId, imageIds);
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.state.currentGalleryId}/content`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content_ids: imageIds, action: 'add' })
+        body: JSON.stringify({ contentIds: imageIds, action: 'add' })
       });
+      
+      console.log('Assignment response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Assignment failed:', errorText);
+        throw new Error(`Assignment failed: ${response.status} ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('Assignment result:', result);
     } catch (error) {
       console.error('Failed to assign images to gallery:', error);
+      throw error;
     }
   }
 
