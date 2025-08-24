@@ -609,6 +609,15 @@ class PhotoFrameChannel(BaseChannel):
                 return JSONResponse({"success": True, **results})
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to sync filesystem: {str(e)}")
+
+        @router.post("/regenerate-thumbnails")
+        async def regenerate_thumbnails():
+            """Regenerate all thumbnails using the new co-located approach"""
+            try:
+                results = await self._regenerate_colocated_thumbnails()
+                return JSONResponse({"success": True, **results})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to regenerate thumbnails: {str(e)}")
         
         return router
     
@@ -693,6 +702,66 @@ class PhotoFrameChannel(BaseChannel):
                     print(f"Failed to process {file_path.name}: {e}")
         
         return count
+
+    async def _regenerate_colocated_thumbnails(self):
+        """Regenerate thumbnails using the new co-located approach"""
+        try:
+            from PIL import Image
+        except ImportError:
+            raise HTTPException(status_code=500, detail="PIL not available for thumbnail generation")
+        
+        all_images = self.metadata.get_all_images()
+        uploads_dir = self.channel_dir / "assets" / "uploads"
+        
+        generated_count = 0
+        error_count = 0
+        errors = []
+        
+        for image in all_images:
+            filename = image["filename"]
+            source_path = uploads_dir / filename
+            
+            # Generate thumbnail filename: image.jpg -> image.thumb.jpg
+            name_stem = Path(filename).stem
+            thumb_filename = f"{name_stem}.thumb.jpg"
+            thumb_path = uploads_dir / thumb_filename
+            
+            if source_path.exists():
+                try:
+                    # Generate thumbnail
+                    with Image.open(source_path) as img:
+                        # Convert to RGB if necessary (for PNG with transparency)
+                        if img.mode in ('RGBA', 'LA', 'P'):
+                            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                            if img.mode == 'P':
+                                img = img.convert('RGBA')
+                            rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                            img = rgb_img
+                        
+                        # Create thumbnail
+                        img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+                        img.save(thumb_path, "JPEG", quality=85, optimize=True)
+                        
+                        generated_count += 1
+                        print(f"Generated thumbnail: {thumb_filename}")
+                        
+                except Exception as e:
+                    error_count += 1
+                    error_msg = f"Failed to generate thumbnail for {filename}: {str(e)}"
+                    errors.append(error_msg)
+                    print(error_msg)
+            else:
+                error_count += 1
+                error_msg = f"Source image not found: {filename}"
+                errors.append(error_msg)
+                print(error_msg)
+        
+        return {
+            "total_images": len(all_images),
+            "generated_count": generated_count,
+            "error_count": error_count,
+            "errors": errors
+        }
     
     async def _get_next_image(self, settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Select next image based on slideshow settings"""
