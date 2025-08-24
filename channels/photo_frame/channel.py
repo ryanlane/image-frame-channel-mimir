@@ -739,7 +739,7 @@ class PhotoFrameChannel(BaseChannel):
                             img = rgb_img
                         
                         # Create thumbnail
-                        img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+                        img.thumbnail((600, 600), Image.Resampling.LANCZOS)
                         img.save(thumb_path, "JPEG", quality=85, optimize=True)
                         
                         generated_count += 1

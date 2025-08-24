@@ -26,9 +26,9 @@ class ImageProcessor:
         with Image.open(dest_path) as img:
             width, height = img.size
             
-            # Create thumbnail (150x150 max, maintaining aspect ratio)
+            # Create thumbnail (600x600 max, maintaining aspect ratio)
             thumbnail = img.copy()
-            thumbnail.thumbnail((150, 150), Image.LANCZOS)
+            thumbnail.thumbnail((600, 600), Image.LANCZOS)
             
             # Convert to RGB if needed (for PNG with transparency)
             if thumbnail.mode in ('RGBA', 'LA', 'P'):
