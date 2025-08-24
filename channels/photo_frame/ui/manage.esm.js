@@ -368,6 +368,9 @@ class XPhotoFrameManager extends HTMLElement {
     const createFirstGalleryBtn = this.shadowRoot.getElementById('create-first-gallery-btn');
     createFirstGalleryBtn?.addEventListener('click', this.handleNewGallery.bind(this));
 
+    const gallerySettingsBtn = this.shadowRoot.getElementById('gallery-settings-btn');
+    gallerySettingsBtn?.addEventListener('click', this.handleGallerySettings.bind(this));
+
     if (this.state.view === 'gallery-detail') {
       this.attachUploadEventListeners();
       this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
@@ -527,6 +530,41 @@ class XPhotoFrameManager extends HTMLElement {
       }
     } catch (error) {
       console.error('Error creating gallery:', error);
+    }
+  }
+
+  async handleGallerySettings() {
+    if (!this.state.selectedGallery) return;
+    
+    const gallery = this.state.selectedGallery;
+    const newName = prompt("Gallery name:", gallery.name);
+    if (newName === null) return; // User cancelled
+    
+    const newDescription = prompt("Gallery description:", gallery.description || "");
+    if (newDescription === null) return; // User cancelled
+
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: newName, 
+          description: newDescription 
+        })
+      });
+      
+      if (res.ok) {
+        await this.refreshData();
+        this.render();
+        this.attachEventListeners();
+      } else {
+        console.error('Failed to update gallery');
+        alert('Failed to update gallery settings');
+      }
+    } catch (error) {
+      console.error('Error updating gallery:', error);
+      alert('Error updating gallery settings');
     }
   }
 

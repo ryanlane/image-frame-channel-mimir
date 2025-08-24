@@ -146,14 +146,14 @@ class GalleryCard extends HTMLElement {
     if (gallery.coverImageId) {
       const coverImage = this.allImages.find(img => img.id.toString() === gallery.coverImageId);
       if (coverImage) {
-        return `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/data/thumbs/${coverImage.filename}`;
+        return `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${coverImage.filename.replace(/\.[^/.]+$/, '')}.thumb.jpg`;
       }
     }
     
     if (gallery.contentIds && gallery.contentIds.length > 0) {
       const firstImage = this.allImages.find(img => img.id.toString() === gallery.contentIds[0]);
       if (firstImage) {
-        return `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/data/thumbs/${firstImage.filename}`;
+        return `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${firstImage.filename.replace(/\.[^/.]+$/, '')}.thumb.jpg`;
       }
     }
     
