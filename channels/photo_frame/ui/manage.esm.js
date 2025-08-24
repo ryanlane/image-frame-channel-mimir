@@ -39,12 +39,12 @@ class XPhotoFrameManager extends HTMLElement {
       ]);
 
       // Parse responses with error handling
-      const galleriesData = galleriesRes.ok ? await galleriesRes.json() : [];
+      const galleriesData = galleriesRes.ok ? await galleriesRes.json() : {};
       const imagesData = imagesRes.ok ? await imagesRes.json() : [];
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
 
-      // Ensure galleries is always an array
-      this.state.galleries = Array.isArray(galleriesData) ? galleriesData : [];
+      // Extract galleries from the subChannels property
+      this.state.galleries = Array.isArray(galleriesData?.subChannels) ? galleriesData.subChannels : [];
       this.state.allImages = Array.isArray(imagesData) ? imagesData : [];
       this.state.settings = settingsData || {};
 
@@ -158,6 +158,53 @@ class XPhotoFrameManager extends HTMLElement {
         .hidden {
           display: none;
         }
+        .first-run-container {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 60vh;
+        }
+        .first-run-card {
+          background: white;
+          border-radius: 12px;
+          padding: 48px;
+          max-width: 600px;
+          text-align: center;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .first-run-card h2 {
+          color: #212529;
+          margin-bottom: 16px;
+        }
+        .feature-list {
+          text-align: left;
+          margin: 32px 0;
+        }
+        .feature-item {
+          display: flex;
+          align-items: flex-start;
+          margin-bottom: 24px;
+        }
+        .feature-icon {
+          font-size: 1.5rem;
+          margin-right: 16px;
+          margin-top: 4px;
+        }
+        .feature-item strong {
+          display: block;
+          color: #212529;
+          margin-bottom: 4px;
+        }
+        .feature-item p {
+          margin: 0;
+          color: #6c757d;
+          font-size: 0.9rem;
+        }
+        .btn-primary.large {
+          padding: 16px 32px;
+          font-size: 1.1rem;
+          margin-top: 16px;
+        }
       </style>
       <div class="manager-container">
         ${viewContainer.innerHTML}
@@ -169,6 +216,47 @@ class XPhotoFrameManager extends HTMLElement {
   }
 
   renderGalleryOverview() {
+    const hasGalleries = this.state.galleries && this.state.galleries.length > 0;
+    
+    if (!hasGalleries) {
+      return `
+        <div class="header">
+          <h1>🖼️ Photo Frame Galleries</h1>
+          <button class="btn-primary" id="new-gallery-btn">Create Your First Gallery</button>
+        </div>
+        <div class="first-run-container">
+          <div class="first-run-card">
+            <h2>🎉 Welcome to Photo Frame Manager</h2>
+            <p>Get started by creating your first gallery to organize your photos.</p>
+            <div class="feature-list">
+              <div class="feature-item">
+                <span class="feature-icon">📁</span>
+                <div>
+                  <strong>Organize Photos</strong>
+                  <p>Create galleries to group related photos together</p>
+                </div>
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">🎨</span>
+                <div>
+                  <strong>Set Cover Images</strong>
+                  <p>Choose a representative image for each gallery</p>
+                </div>
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">🔄</span>
+                <div>
+                  <strong>Auto Rotation</strong>
+                  <p>Your photo frame will cycle through gallery images</p>
+                </div>
+              </div>
+            </div>
+            <button class="btn-primary large" id="create-first-gallery-btn">Create Your First Gallery</button>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="header">
         <h1>🖼️ Photo Frame Galleries</h1>
@@ -276,6 +364,9 @@ class XPhotoFrameManager extends HTMLElement {
 
     const newGalleryBtn = this.shadowRoot.getElementById('new-gallery-btn');
     newGalleryBtn?.addEventListener('click', this.handleNewGallery.bind(this));
+
+    const createFirstGalleryBtn = this.shadowRoot.getElementById('create-first-gallery-btn');
+    createFirstGalleryBtn?.addEventListener('click', this.handleNewGallery.bind(this));
 
     if (this.state.view === 'gallery-detail') {
       this.attachUploadEventListeners();
