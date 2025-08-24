@@ -680,6 +680,29 @@ class PhotoFrameChannel(BaseChannel):
                 raise HTTPException(status_code=400, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to update gallery settings: {str(e)}")
+
+        @router.post("/subchannels/{subchannel_id}/images/reorder")
+        async def reorder_gallery_images_endpoint(subchannel_id: str, request: Request):
+            """Reorder images within a specific gallery"""
+            try:
+                data = await request.json()
+                dragged_id = data.get("dragged_id")
+                target_id = data.get("target_id")
+                
+                if not dragged_id or not target_id:
+                    raise HTTPException(status_code=400, detail="Both dragged_id and target_id are required")
+                
+                success = self.reorder_gallery_images(subchannel_id, str(dragged_id), str(target_id))
+                
+                if success:
+                    return JSONResponse({"success": True, "message": "Images reordered successfully"})
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to reorder images")
+                    
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to reorder gallery images: {str(e)}")
         
         return router
     
@@ -1284,3 +1307,51 @@ class PhotoFrameChannel(BaseChannel):
             return gallery_images[0]
         
         return None
+    
+    def reorder_gallery_images(self, gallery_id: str, dragged_id: str, target_id: str) -> bool:
+        """
+        Reorder images within a specific gallery's contentIds array
+        
+        Args:
+            gallery_id: ID of the gallery to reorder images in
+            dragged_id: ID of the image being moved
+            target_id: ID of the image to place the dragged image before
+            
+        Returns:
+            bool: True if reordering was successful
+            
+        Raises:
+            ValueError: If gallery or images not found
+        """
+        from datetime import datetime, timezone
+        
+        # Find the gallery
+        gallery = self._find_gallery(gallery_id)
+        if not gallery:
+            raise ValueError(f"Gallery '{gallery_id}' not found")
+        
+        content_ids = gallery["contentIds"]
+        
+        # Validate that both images exist in the gallery
+        if dragged_id not in content_ids:
+            raise ValueError(f"Image '{dragged_id}' not found in gallery '{gallery_id}'")
+        if target_id not in content_ids:
+            raise ValueError(f"Target image '{target_id}' not found in gallery '{gallery_id}'")
+        
+        # Remove the dragged image from its current position
+        content_ids.remove(dragged_id)
+        
+        # Find the new position (before the target)
+        target_index = content_ids.index(target_id)
+        
+        # Insert the dragged image at the new position
+        content_ids.insert(target_index, dragged_id)
+        
+        # Update the gallery
+        gallery["contentIds"] = content_ids
+        gallery["modified"] = datetime.now(timezone.utc).isoformat()
+        
+        # Save the changes
+        self._save_galleries()
+        
+        return True
