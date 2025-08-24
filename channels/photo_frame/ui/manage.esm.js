@@ -1,96 +1,68 @@
-// x-photo-frame-manager Web Component for Mimir Platform v2.4
+import './components/gallery-card.js';
+import './components/image-card.js';
+
+// x-photo-frame-manager Web Component for Mimir Platform v2.5
 class XPhotoFrameManager extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-    this.images = [];
-    this.settings = {};
+    
+    this.state = {
+      view: 'gallery-overview', // 'gallery-overview' or 'gallery-detail'
+      galleries: [],
+      allImages: [],
+      currentGalleryId: null,
+      settings: {},
+      dragCounter: 0,
+      uploadAreaCollapsed: true,
+    };
+
     this.apiBaseUrl = this.getApiBaseUrl();
-    this.uploadAreaCollapsed = true;
-    this.dragCounter = 0; // Track drag events for proper expand/collapse
-    this.galleryId = null; // Gallery context
-    this.galleryInfo = null;
-  }
-
-  static get observedAttributes() {
-    return ['gallery-id'];
-  }
-
-  attributeChangedCallback(name, oldValue, newValue) {
-    if (name === 'gallery-id') {
-      this.galleryId = newValue;
-      if (this.isConnected) {
-        this.loadData();
-      }
-    }
   }
 
   getApiBaseUrl() {
-    // Use the server base URL provided by the host platform
     return window.mimirServerBaseUrl || window.location.origin;
   }
 
-  getSettingValue(key, defaultValue = null) {
-    // Helper to extract value from new settings format: {type: "string", value: "..."}
-    const setting = this.settings[key];
-    if (setting && typeof setting === 'object' && 'value' in setting) {
-      return setting.value;
-    }
-    // Fallback for old format or missing setting
-    return setting || defaultValue;
-  }
-
   async connectedCallback() {
-    await this.loadData();
+    await this.loadInitialData();
     this.render();
     this.attachEventListeners();
   }
 
-  async loadData() {
+  async loadInitialData() {
     try {
-      if (this.galleryId) {
-        // Load gallery-specific content
-        const galleryRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.galleryId}`, {
-          credentials: 'include'
-        });
-        
-        if (galleryRes.ok) {
-          this.galleryInfo = await galleryRes.json();
-          
-          // Load gallery content
-          const contentRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.galleryId}/content`, {
-            credentials: 'include'
-          });
-          
-          if (contentRes.ok) {
-            const contentData = await contentRes.json();
-            this.images = contentData.content || [];
-          } else {
-            this.images = [];
-          }
-        } else {
-          console.error('Failed to load gallery info');
-          this.images = [];
-        }
-      } else {
-        // Load all images (original behavior)
-        const imagesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images`, {
-          credentials: 'include'
-        });
-        this.images = await imagesRes.json();
-      }
+      const [galleriesRes, imagesRes, settingsRes] = await Promise.all([
+        fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, { credentials: 'include' }),
+        fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images`, { credentials: 'include' }),
+        fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, { credentials: 'include' })
+      ]);
 
-      // Load settings (same for all galleries for now)
-      const settingsRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, {
-        credentials: 'include'
-      });
-      this.settings = await settingsRes.json();
+      this.state.galleries = await galleriesRes.json();
+      this.state.allImages = await imagesRes.json();
+      this.state.settings = await settingsRes.json();
+
     } catch (error) {
-      console.error('Failed to load data:', error);
+      console.error('Failed to load initial data:', error);
     }
   }
 
+  getSettingValue(key, defaultValue = null) {
+    const setting = this.state.settings[key];
+    if (setting && typeof setting === 'object' && 'value' in setting) {
+      return setting.value;
+    }
+    return setting || defaultValue;
+  }
+
   render() {
+    const viewContainer = document.createElement('div');
+    if (this.state.view === 'gallery-overview') {
+      viewContainer.innerHTML = this.renderGalleryOverview();
+    } else if (this.state.view === 'gallery-detail') {
+      viewContainer.innerHTML = this.renderGalleryDetail();
+    }
+
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -112,6 +84,31 @@ class XPhotoFrameManager extends HTMLElement {
           margin: 0;
           color: #212529;
         }
+        .btn-primary {
+          background: #007bff;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          padding: 10px 20px;
+          cursor: pointer;
+          font-size: 0.9rem;
+        }
+        .btn-primary:hover {
+          background: #0056b3;
+        }
+        .btn-secondary {
+          background: #6c757d;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          padding: 8px 16px;
+          cursor: pointer;
+        }
+        .grid-container {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 24px;
+        }
         .upload-area {
           border: 2px dashed #dee2e6;
           border-radius: 8px;
@@ -131,7 +128,7 @@ class XPhotoFrameManager extends HTMLElement {
           display: none;
         }
         .upload-area.collapsed::before {
-          content: "${this.galleryId ? '� Upload to Gallery (click to expand)' : '�📤 Upload Images (click to expand)'}";
+          content: "📤 Upload Images (click to expand)";
           color: #6c757d;
           font-size: 0.9rem;
         }
@@ -142,237 +139,123 @@ class XPhotoFrameManager extends HTMLElement {
           border-color: #007bff;
           background: #f0f8ff;
         }
-        .settings-panel {
-          background: #ffffff;
-          border-radius: 8px;
-          padding: 20px;
-          margin-bottom: 24px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .settings-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-        .setting-group {
-          display: flex;
-          flex-direction: column;
-        }
-        .setting-group label {
-          font-weight: 500;
-          margin-bottom: 4px;
-          color: #495057;
-        }
-        .setting-group select, .setting-group input {
-          padding: 8px;
-          border: 1px solid #ced4da;
-          border-radius: 4px;
-          font-size: 0.9rem;
-        }
-        .image-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 20px;
-        }
-        .image-card {
-          background: #ffffff;
-          border-radius: 8px;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-          padding: 16px;
-          transition: transform 0.2s;
-          cursor: move;
-        }
-        .image-card:hover {
-          transform: translateY(-2px);
-        }
-        .image-card.dragging {
-          opacity: 0.5;
-          transform: rotate(5deg);
-        }
-        .image-card.drag-over {
-          border: 2px dashed #007bff;
-          background: #f0f8ff;
-        }
-        .image-preview {
-          position: relative;
-          margin-bottom: 12px;
-        }
-        .image-preview img {
-          width: 100%;
-          height: 160px;
-          object-fit: cover;
-          border-radius: 6px;
-          background: #f8f9fa;
-        }
-        .image-overlay {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          display: flex;
-          gap: 4px;
-        }
-        .btn-icon {
-          background: rgba(0,0,0,0.7);
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 6px;
-          cursor: pointer;
-          font-size: 14px;
-          pointer-events: auto;
-        }
-        .btn-icon:hover {
-          background: rgba(0,0,0,0.9);
-        }
-        .image-info h3 {
-          margin: 0 0 8px 0;
-          font-size: 1rem;
-          color: #212529;
-        }
-        .image-info p {
-          margin: 0 0 8px 0;
-          color: #6c757d;
-          font-size: 0.9rem;
-        }
-        .image-stats {
-          display: flex;
-          justify-content: space-between;
-          font-size: 0.8rem;
-          color: #868e96;
-        }
-        .btn-primary {
-          background: #007bff;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 10px 20px;
-          cursor: pointer;
-          font-size: 0.9rem;
-        }
-        .btn-primary:hover {
-          background: #0056b3;
-        }
         .hidden {
           display: none;
         }
       </style>
       <div class="manager-container">
-        <div class="header">
-          <h1>${this.galleryInfo ? `📸 ${this.galleryInfo.name}` : 'Photo Frame Management'}</h1>
-          ${this.galleryInfo && this.galleryInfo.description ? `<p style="margin: 4px 0 0 0; color: #6c757d; font-size: 0.9rem;">${this.galleryInfo.description}</p>` : ''}
-          <button class="btn-primary" onclick="this.getRootNode().host.refreshData()">
-            Refresh
-          </button>
-        </div>
-        
-        <div class="settings-panel">
-          <h3>Settings</h3>
-          <div class="settings-grid">
-            <div class="setting-group">
-              <label>Slideshow Mode</label>
-              <select id="slideshow-enabled">
-                <option value="true" ${this.getSettingValue('slideshow_enabled', true) !== false ? 'selected' : ''}>Enabled</option>
-                <option value="false" ${this.getSettingValue('slideshow_enabled', true) === false ? 'selected' : ''}>Disabled</option>
-              </select>
-            </div>
-            <div class="setting-group">
-              <label>Image Order</label>
-              <select id="order-mode">
-                <option value="added" ${this.getSettingValue('order_mode', 'added') === 'added' ? 'selected' : ''}>Date Added</option>
-                <option value="random" ${this.getSettingValue('order_mode', 'added') === 'random' ? 'selected' : ''}>Random</option>
-                <option value="custom" ${this.getSettingValue('order_mode', 'added') === 'custom' ? 'selected' : ''}>As shown below</option>
-              </select>
-              <small style="color: #6c757d; font-size: 0.8rem; margin-top: 4px;">
-                ${this.getSettingValue('order_mode', 'added') === 'custom' ? 'Drag images below to reorder them' : ''}
-              </small>
-            </div>
-            <div class="setting-group">
-              <label>Display Mode</label>
-              <select id="crop-mode">
-                <option value="smart_crop" ${this.getSettingValue('crop_mode', 'smart_crop') === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
-                <option value="letterbox" ${this.getSettingValue('crop_mode', 'smart_crop') === 'letterbox' ? 'selected' : ''}>Letterbox</option>
-                <option value="stretch" ${this.getSettingValue('crop_mode', 'smart_crop') === 'stretch' ? 'selected' : ''}>Stretch</option>
-              </select>
-            </div>
-            <div class="setting-group">
-              <label>Update Interval Unit</label>
-              <select id="update-interval-unit">
-                <option value="seconds" ${this.getSettingValue('update_interval_unit', 'minutes') === 'seconds' ? 'selected' : ''}>Seconds</option>
-                <option value="minutes" ${this.getSettingValue('update_interval_unit', 'minutes') === 'minutes' ? 'selected' : ''}>Minutes</option>
-                <option value="hours" ${this.getSettingValue('update_interval_unit', 'minutes') === 'hours' ? 'selected' : ''}>Hours</option>
-                <option value="days" ${this.getSettingValue('update_interval_unit', 'minutes') === 'days' ? 'selected' : ''}>Days</option>
-              </select>
-            </div>
-            <div class="setting-group">
-              <label>Update Interval Value</label>
-              <input type="number" id="update-interval-value" min="1" value="${this.getSettingValue('update_interval_value', 30)}" />
-            </div>
-          </div>
-        </div>
+        ${viewContainer.innerHTML}
+      </div>
+    `;
 
-        <div class="upload-area ${this.uploadAreaCollapsed ? 'collapsed' : ''}" id="upload-area">
-          <div class="upload-content">
-            <p><strong>Drop images here or click to upload</strong></p>
-            <p>Supported formats: JPG, PNG, GIF</p>
-            ${this.galleryId ? `<p style="color: #007bff; font-size: 0.85rem;">📸 Images will be added to this gallery</p>` : ''}
-          </div>
-          <input type="file" multiple accept="image/*" class="hidden" id="file-input">
-        </div>
+    // After HTML is set, populate with custom components
+    this.populateComponents();
+  }
 
-        <div class="image-grid">
-          ${this.getSettingValue('order_mode', 'added') === 'custom' ? '<p style="color: #6c757d; font-size: 0.9rem; margin-bottom: 16px; text-align: center;">💡 Drag and drop images below to change their display order</p>' : ''}
-          ${this.images
-            .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-            .map(img => `
-            <div class="image-card" 
-                 data-id="${img.id}" 
-                 draggable="true"
-                 ondragstart="this.getRootNode().host.handleDragStart(event)"
-                 ondragend="this.getRootNode().host.handleDragEnd(event)"
-                 ondragover="this.getRootNode().host.handleDragOver(event)"
-                 ondrop="this.getRootNode().host.handleDrop(event)">
-              <div class="image-preview">
-                <img src="${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${img.filename}" 
-                     alt="${img.title || img.original_name}" 
-                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhmOWZhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzZjNzU3ZCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIG5vdCBmb3VuZDwvdGV4dD48L3N2Zz4='" />
-                <div class="image-overlay">
-                  <button class="btn-icon" 
-                          onclick="this.getRootNode().host.toggleImage(${img.id})" 
-                          onmousedown="event.stopPropagation()"
-                          title="${img.enabled ? 'Disable' : 'Enable'}">
-                    ${img.enabled ? '👁️' : '🚫'}
-                  </button>
-                  <button class="btn-icon" 
-                          onclick="this.getRootNode().host.deleteImage(${img.id})" 
-                          onmousedown="event.stopPropagation()"
-                          title="Delete">
-                    🗑️
-                  </button>
-                </div>
-              </div>
-              <div class="image-info">
-                <h3>${img.title || img.original_name}</h3>
-                <p>${img.description || 'No description'}</p>
-                <div class="image-stats">
-                  <span>${img.width}×${img.height}</span>
-                  <span>Shown: ${img.times_shown || 0} times</span>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
+  renderGalleryOverview() {
+    return `
+      <div class="header">
+        <h1>🖼️ Photo Frame Galleries</h1>
+        <button class="btn-primary" id="new-gallery-btn">New Gallery</button>
+      </div>
+      <div class="grid-container" id="gallery-grid">
+        <!-- Gallery cards will be inserted here -->
       </div>
     `;
   }
 
+  renderGalleryDetail() {
+    const gallery = this.state.galleries.find(g => g.id === this.state.currentGalleryId);
+    if (!gallery) return '<h2>Gallery not found</h2>';
+
+    const galleryImages = this.state.allImages.filter(img => gallery.contentIds.includes(img.id.toString()));
+
+    return `
+      <div class="header">
+        <div>
+          <button class="btn-secondary" id="back-to-galleries">← Back to Galleries</button>
+          <h1 style="margin-top: 16px;">${gallery.name}</h1>
+          <p style="color: #6c757d;">${gallery.description || ''}</p>
+        </div>
+        <button class="btn-primary" id="gallery-settings-btn">Gallery Settings</button>
+      </div>
+      
+      <div class="upload-area ${this.state.uploadAreaCollapsed ? 'collapsed' : ''}" id="upload-area">
+        <div class="upload-content">
+          <p><strong>Drop images here or click to upload</strong></p>
+          <p>Images will be added to the "${gallery.name}" gallery.</p>
+        </div>
+        <input type="file" multiple accept="image/*" class="hidden" id="file-input">
+      </div>
+
+      <div class="grid-container" id="image-grid">
+        <!-- Image cards will be inserted here -->
+      </div>
+    `;
+  }
+
+  // After HTML is set, populate with custom components
+  populateComponents() {
+    if (this.state.view === 'gallery-overview') {
+      this.populateGalleryCards();
+    } else if (this.state.view === 'gallery-detail') {
+      this.populateImageCards();
+    }
+  }
+
+  populateGalleryCards() {
+    const gridContainer = this.shadowRoot.getElementById('gallery-grid');
+    if (!gridContainer) return;
+
+    this.state.galleries.forEach(gallery => {
+      const card = document.createElement('gallery-card');
+      card.gallery = gallery;
+      card.allImages = this.state.allImages;
+      gridContainer.appendChild(card);
+    });
+  }
+
+  populateImageCards() {
+    const gridContainer = this.shadowRoot.getElementById('image-grid');
+    if (!gridContainer) return;
+
+    const gallery = this.state.galleries.find(g => g.id === this.state.currentGalleryId);
+    if (!gallery) return;
+
+    const galleryImages = this.state.allImages.filter(img => gallery.contentIds.includes(img.id.toString()));
+    
+    galleryImages.forEach(image => {
+      const card = document.createElement('image-card');
+      card.image = image;
+      card.isCover = gallery.coverImageId === image.id.toString();
+      gridContainer.appendChild(card);
+    });
+  }
+
   attachEventListeners() {
+    this.shadowRoot.addEventListener('gallery-selected', this.handleGallerySelected.bind(this));
+    
+    const backBtn = this.shadowRoot.getElementById('back-to-galleries');
+    backBtn?.addEventListener('click', this.handleBackToGalleries.bind(this));
+
+    const newGalleryBtn = this.shadowRoot.getElementById('new-gallery-btn');
+    newGalleryBtn?.addEventListener('click', this.handleNewGallery.bind(this));
+
+    if (this.state.view === 'gallery-detail') {
+      this.attachUploadEventListeners();
+      this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
+      this.shadowRoot.addEventListener('set-cover-image', this.handleSetCoverImage.bind(this));
+    }
+  }
+
+  attachUploadEventListeners() {
     const uploadArea = this.shadowRoot.getElementById('upload-area');
     const fileInput = this.shadowRoot.getElementById('file-input');
+    if (!uploadArea || !fileInput) return;
 
-    // Upload area click to expand or trigger file input
     uploadArea.addEventListener('click', () => {
-      if (this.uploadAreaCollapsed) {
-        this.uploadAreaCollapsed = false;
+      if (this.state.uploadAreaCollapsed) {
+        this.state.uploadAreaCollapsed = false;
         this.render();
         this.attachEventListeners();
       } else {
@@ -380,75 +263,18 @@ class XPhotoFrameManager extends HTMLElement {
       }
     });
     
-    // Global drag events to handle upload area expansion
-    document.addEventListener('dragenter', (e) => {
-      if (e.dataTransfer.types.includes('Files')) {
-        this.dragCounter++;
-        if (this.uploadAreaCollapsed) {
-          this.uploadAreaCollapsed = false;
-          this.render();
-          this.attachEventListeners();
-        }
-      }
-    });
-
-    document.addEventListener('dragleave', (e) => {
-      if (e.dataTransfer.types.includes('Files')) {
-        this.dragCounter--;
-        if (this.dragCounter === 0) {
-          setTimeout(() => {
-            if (this.dragCounter === 0) {
-              this.uploadAreaCollapsed = true;
-              this.render();
-              this.attachEventListeners();
-            }
-          }, 100);
-        }
-      }
-    });
-
-    document.addEventListener('drop', (e) => {
-      if (e.dataTransfer.types.includes('Files')) {
-        this.dragCounter = 0;
-      }
-    });
-    
-    uploadArea.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadArea.classList.add('dragover');
-    });
-
-    uploadArea.addEventListener('dragleave', () => {
-      uploadArea.classList.remove('dragover');
-    });
-
-    uploadArea.addEventListener('drop', (e) => {
+    uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', e => {
       e.preventDefault();
       uploadArea.classList.remove('dragover');
       this.handleFiles(e.dataTransfer.files);
     });
-
-    fileInput.addEventListener('change', (e) => {
-      this.handleFiles(e.target.files);
-    });
-
-    // Settings change listeners
-    const settingsElements = [
-      'slideshow-enabled', 
-      'order-mode', 
-      'crop-mode', 
-      'update-interval-unit', 
-      'update-interval-value'
-    ];
-    settingsElements.forEach(id => {
-      const element = this.shadowRoot.getElementById(id);
-      element?.addEventListener('change', () => this.saveSettings());
-    });
+    fileInput.addEventListener('change', e => this.handleFiles(e.target.files));
   }
 
   async handleFiles(files) {
     const formData = new FormData();
-    
     for (let file of files) {
       if (file.type.startsWith('image/')) {
         formData.append('files', file);
@@ -456,178 +282,118 @@ class XPhotoFrameManager extends HTMLElement {
     }
 
     try {
-      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/upload`, {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/upload`, {
         method: 'POST',
         body: formData,
         credentials: 'include'
       });
 
-      if (response.ok) {
-        const uploadResult = await response.json();
-        
-        // If we're in a gallery context, assign the uploaded images to this gallery
-        if (this.galleryId && uploadResult.uploaded && uploadResult.uploaded.length > 0) {
+      if (res.ok) {
+        const uploadResult = await res.json();
+        if (this.state.currentGalleryId && uploadResult.uploaded?.length > 0) {
           const imageIds = uploadResult.uploaded.map(img => img.id.toString());
-          
-          try {
-            await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.galleryId}/content`, {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ 
-                content_ids: imageIds, 
-                action: 'add' 
-              })
-            });
-          } catch (assignError) {
-            console.error('Failed to assign images to gallery:', assignError);
-          }
+          await this.assignImagesToGallery(imageIds);
         }
-        
         await this.refreshData();
       } else {
-        console.error('Upload failed:', response.statusText);
+        console.error('Upload failed:', res.statusText);
       }
     } catch (error) {
       console.error('Upload error:', error);
     }
   }
 
-  async saveSettings() {
-    const settings = {
-      slideshow_enabled: this.shadowRoot.getElementById('slideshow-enabled').value === 'true',
-      order_mode: this.shadowRoot.getElementById('order-mode').value,
-      crop_mode: this.shadowRoot.getElementById('crop-mode').value,
-      update_interval_unit: this.shadowRoot.getElementById('update-interval-unit').value,
-      update_interval_value: parseInt(this.shadowRoot.getElementById('update-interval-value').value)
-    };
-
+  async assignImagesToGallery(imageIds) {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(settings),
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        this.settings = { ...this.settings, ...settings };
-      }
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-    }
-  }
-
-  async toggleImage(imageId) {
-    try {
-      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/${imageId}/toggle`, {
+      await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${this.state.currentGalleryId}/content`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_ids: imageIds, action: 'add' })
       });
-
-      if (response.ok) {
-        await this.refreshData();
-      }
     } catch (error) {
-      console.error('Failed to toggle image:', error);
-    }
-  }
-
-  async deleteImage(imageId) {
-    if (confirm('Are you sure you want to delete this image?')) {
-      try {
-        const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/${imageId}`, {
-          method: 'DELETE',
-          credentials: 'include'
-        });
-
-        if (response.ok) {
-          await this.refreshData();
-        }
-      } catch (error) {
-        console.error('Failed to delete image:', error);
-      }
+      console.error('Failed to assign images to gallery:', error);
     }
   }
 
   async refreshData() {
-    await this.loadData();
+    await this.loadInitialData();
     this.render();
     this.attachEventListeners();
   }
 
-  // Drag and drop methods for image reordering
-  handleDragStart(event) {
-    const card = event.target.closest('.image-card');
-    card.classList.add('dragging');
-    event.dataTransfer.setData('text/plain', card.dataset.id);
-    event.dataTransfer.effectAllowed = 'move';
+  handleGallerySelected(e) {
+    this.state.view = 'gallery-detail';
+    this.state.currentGalleryId = e.detail.galleryId;
+    this.render();
+    this.attachEventListeners();
   }
 
-  handleDragEnd(event) {
-    const card = event.target.closest('.image-card');
-    card.classList.remove('dragging');
-    
-    // Remove drag-over class from all cards
-    this.shadowRoot.querySelectorAll('.image-card').forEach(c => {
-      c.classList.remove('drag-over');
-    });
+  handleBackToGalleries() {
+    this.state.view = 'gallery-overview';
+    this.state.currentGalleryId = null;
+    this.render();
+    this.attachEventListeners();
   }
 
-  handleDragOver(event) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    
-    const card = event.target.closest('.image-card');
-    if (card && !card.classList.contains('dragging')) {
-      card.classList.add('drag-over');
-    }
-  }
+  async handleNewGallery() {
+    const name = prompt("Enter new gallery name:");
+    if (!name) return;
+    const description = prompt("Enter gallery description (optional):");
 
-  async handleDrop(event) {
-    event.preventDefault();
-    
-    const draggedId = event.dataTransfer.getData('text/plain');
-    const targetCard = event.target.closest('.image-card');
-    
-    if (!targetCard || targetCard.dataset.id === draggedId) {
-      return;
-    }
-
-    const targetId = targetCard.dataset.id;
-    
-    // Update the order
-    await this.updateImageOrder(draggedId, targetId);
-    
-    // Clean up
-    targetCard.classList.remove('drag-over');
-  }
-
-  async updateImageOrder(draggedId, targetId) {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/reorder`, {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          dragged_id: parseInt(draggedId),
-          target_id: parseInt(targetId)
-        }),
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description })
       });
-
-      if (response.ok) {
+      if (res.ok) {
         await this.refreshData();
       } else {
-        console.error('Failed to update image order:', response.statusText);
+        console.error('Failed to create gallery');
       }
     } catch (error) {
-      console.error('Error updating image order:', error);
+      console.error('Error creating gallery:', error);
+    }
+  }
+
+  async handleDeleteImage(e) {
+    const imageId = e.detail.imageId;
+    if (confirm('Are you sure you want to delete this image? This will remove it from all galleries.')) {
+      try {
+        const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/${imageId}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        if (res.ok) {
+          await this.refreshData();
+        } else {
+          console.error('Failed to delete image');
+        }
+      } catch (error) {
+        console.error('Error deleting image:', error);
+      }
+    }
+  }
+
+  async handleSetCoverImage(e) {
+    const imageId = e.detail.imageId;
+    const galleryId = this.state.currentGalleryId;
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${galleryId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cover_image_id: imageId.toString() })
+      });
+      if (res.ok) {
+        await this.refreshData();
+      } else {
+        console.error('Failed to set cover image');
+      }
+    } catch (error) {
+      console.error('Error setting cover image:', error);
     }
   }
 }
