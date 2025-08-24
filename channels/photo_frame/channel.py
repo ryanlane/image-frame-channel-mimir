@@ -382,7 +382,7 @@ class PhotoFrameChannel(BaseChannel):
 
         @router.put("/images/{image_id}")
         async def update_image(
-            image_id: int,
+            image_id: str,
             title: str = Form(""),
             description: str = Form(""),
             crop_x: float = Form(0),
@@ -403,7 +403,7 @@ class PhotoFrameChannel(BaseChannel):
                 "preserve_aspect_ratio": preserve_aspect_ratio
             }
             
-            success = self.metadata.update_image(str(image_id), updates)
+            success = self.metadata.update_image(image_id, updates)
             
             if success:
                 return JSONResponse({"success": True})
@@ -411,20 +411,20 @@ class PhotoFrameChannel(BaseChannel):
                 raise HTTPException(status_code=404, detail="Image not found")
 
         @router.post("/images/{image_id}/toggle")
-        async def toggle_image(image_id: int):
+        async def toggle_image(image_id: str):
             """Enable/disable image in slideshow"""
-            success = self.metadata.toggle_image_enabled(str(image_id))
+            success = self.metadata.toggle_image_enabled(image_id)
             
             if success:
-                image = self.metadata.get_image(str(image_id))
+                image = self.metadata.get_image(image_id)
                 return JSONResponse({"success": True, "enabled": image["enabled"] if image else False})
             else:
                 raise HTTPException(status_code=404, detail="Image not found")
 
         @router.delete("/images/{image_id}")
-        async def delete_image(image_id: int):
+        async def delete_image(image_id: str):
             """Delete image from collection"""
-            success = self.metadata.delete_image(str(image_id))
+            success = self.metadata.delete_image(image_id)
             
             if success:
                 return JSONResponse({"success": True})
@@ -882,11 +882,11 @@ class PhotoFrameChannel(BaseChannel):
         
         return str(output_path)
     
-    async def _update_image_stats(self, image_id: int):
+    async def _update_image_stats(self, image_id: str):
         """Update image display statistics"""
-        image = self.metadata.get_image(str(image_id))
+        image = self.metadata.get_image(image_id)
         if image:
-            self.metadata.update_image(str(image_id), {
+            self.metadata.update_image(image_id, {
                 "times_shown": image.get("times_shown", 0) + 1,
                 "last_shown_at": datetime.now(timezone.utc).isoformat()
             })
