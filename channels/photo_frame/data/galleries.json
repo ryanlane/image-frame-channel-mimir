@@ -8,7 +8,15 @@
     "created": "2024-08-23T10:00:00Z",
     "modified": "2024-08-23T10:30:00Z",
     "imageCount": 2,
-    "coverImageId": "1"
+    "coverImageId": "1",
+    "displaySettings": {
+      "order_mode": "added",
+      "crop_mode": "smart_crop",
+      "transition_effect": "fade",
+      "update_interval_value": 30,
+      "update_interval_unit": "minutes",
+      "slideshow_enabled": true
+    }
   },
   {
     "id": "vacation_2024",
@@ -19,7 +27,15 @@
     "created": "2024-08-23T11:00:00Z",
     "modified": "2024-08-23T11:00:00Z",
     "imageCount": 1,
-    "coverImageId": "2"
+    "coverImageId": "2",
+    "displaySettings": {
+      "order_mode": "random",
+      "crop_mode": "smart_crop",
+      "transition_effect": "fade",
+      "update_interval_value": 15,
+      "update_interval_unit": "minutes",
+      "slideshow_enabled": true
+    }
   },
   {
     "id": "nature_photography",
@@ -30,6 +46,14 @@
     "created": "2024-08-23T12:00:00Z",
     "modified": "2024-08-23T12:00:00Z",
     "imageCount": 1,
-    "coverImageId": "3"
+    "coverImageId": "3",
+    "displaySettings": {
+      "order_mode": "added",
+      "crop_mode": "letterbox",
+      "transition_effect": "slide",
+      "update_interval_value": 1,
+      "update_interval_unit": "hours",
+      "slideshow_enabled": true
+    }
   }
 ]
