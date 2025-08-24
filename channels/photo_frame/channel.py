@@ -531,6 +531,20 @@ class PhotoFrameChannel(BaseChannel):
                 "resolution": [800, 600],
                 "orientation": "landscape"
             })
+
+        @router.get("/data/thumbs/{filename}")
+        async def get_thumbnail(filename: str):
+            """Serve thumbnail images"""
+            thumb_path = self.channel_dir / "data" / "thumbs" / filename
+            
+            if not thumb_path.exists():
+                raise HTTPException(status_code=404, detail="Thumbnail not found")
+            
+            return FileResponse(
+                path=str(thumb_path),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "max-age=3600"}
+            )
         
         return router
     

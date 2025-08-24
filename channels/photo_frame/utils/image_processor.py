@@ -10,10 +10,26 @@ class ImageProcessor:
         # Save uploaded image and return metadata
         filename = upload_file.filename
         dest_path = self.upload_dir / filename
+        thumb_path = self.thumb_dir / filename
+        
+        # Save original file
         with open(dest_path, 'wb') as f:
             f.write(await upload_file.read())
+        
+        # Open image to get dimensions and create thumbnail
         with Image.open(dest_path) as img:
             width, height = img.size
+            
+            # Create thumbnail (150x150 max, maintaining aspect ratio)
+            thumbnail = img.copy()
+            thumbnail.thumbnail((150, 150), Image.LANCZOS)
+            
+            # Ensure thumbnail directory exists
+            self.thumb_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save thumbnail
+            thumbnail.save(thumb_path, "JPEG", quality=85)
+        
         return {
             "filename": filename,
             "original_name": filename,
