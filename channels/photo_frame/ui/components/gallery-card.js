@@ -38,7 +38,7 @@ class GalleryCard extends HTMLElement {
     if (!this.gallery) return;
 
     const coverImageUrl = this.getCoverImageUrl(this.gallery);
-    const imageCount = this.gallery.imageCount || 0;
+    const imageCount = this.gallery.contentIds ? this.gallery.contentIds.length : 0;
     const tags = this.gallery.tags || [];
 
     this.shadowRoot.innerHTML = `

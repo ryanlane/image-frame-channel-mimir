@@ -534,37 +534,297 @@ class XPhotoFrameManager extends HTMLElement {
   }
 
   async handleGallerySettings() {
-    if (!this.state.selectedGallery) return;
+    if (!this.state.currentGalleryId) return;
     
-    const gallery = this.state.selectedGallery;
-    const newName = prompt("Gallery name:", gallery.name);
-    if (newName === null) return; // User cancelled
+    const gallery = this.state.galleries.find(g => g.id === this.state.currentGalleryId);
+    if (!gallery) return;
     
-    const newDescription = prompt("Gallery description:", gallery.description || "");
-    if (newDescription === null) return; // User cancelled
+    await this.showSettingsModal(gallery);
+  }
 
+  async showSettingsModal(gallery) {
+    // First load the gallery-specific settings
+    let gallerySettings = {};
     try {
-      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, {
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}/settings`, { credentials: 'include' });
+      if (response.ok) {
+        const settingsData = await response.json();
+        // Extract values from the API format
+        gallerySettings = {};
+        for (const [key, setting] of Object.entries(settingsData)) {
+          gallerySettings[key] = setting.value || setting;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load gallery settings:', error);
+      // Use defaults if loading fails
+      gallerySettings = {
+        order_mode: 'added',
+        crop_mode: 'smart_crop',
+        update_interval_value: 30,
+        update_interval_unit: 'minutes'
+      };
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'settings-modal';
+    modal.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Gallery Settings</h2>
+            <button class="close-btn" id="close-modal">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="settings-section">
+              <h3>Gallery Information</h3>
+              <div class="form-group">
+                <label for="gallery-name">Gallery Name:</label>
+                <input type="text" id="gallery-name" value="${gallery.name}" />
+              </div>
+              <div class="form-group">
+                <label for="gallery-description">Description:</label>
+                <textarea id="gallery-description">${gallery.description || ''}</textarea>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h3>Display Settings</h3>
+              <p class="settings-note">These settings apply to this gallery when displayed on photo frames.</p>
+              <div class="form-group">
+                <label for="order-mode">Image Order:</label>
+                <select id="order-mode">
+                  <option value="added" ${gallerySettings.order_mode === 'added' ? 'selected' : ''}>Date Added</option>
+                  <option value="random" ${gallerySettings.order_mode === 'random' ? 'selected' : ''}>Random</option>
+                  <option value="custom" ${gallerySettings.order_mode === 'custom' ? 'selected' : ''}>Custom Order</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="crop-mode">Crop Mode:</label>
+                <select id="crop-mode">
+                  <option value="smart_crop" ${gallerySettings.crop_mode === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
+                  <option value="fit" ${gallerySettings.crop_mode === 'fit' ? 'selected' : ''}>Fit to Screen</option>
+                  <option value="fill" ${gallerySettings.crop_mode === 'fill' ? 'selected' : ''}>Fill Screen</option>
+                </select>
+              </div>
+              <div class="form-group-row">
+                <div class="form-group">
+                  <label for="update-interval-value">Update Every:</label>
+                  <input type="number" id="update-interval-value" min="1" value="${gallerySettings.update_interval_value || 30}" />
+                </div>
+                <div class="form-group">
+                  <label for="update-interval-unit">&nbsp;</label>
+                  <select id="update-interval-unit">
+                    <option value="seconds" ${gallerySettings.update_interval_unit === 'seconds' ? 'selected' : ''}>Seconds</option>
+                    <option value="minutes" ${gallerySettings.update_interval_unit === 'minutes' ? 'selected' : ''}>Minutes</option>
+                    <option value="hours" ${gallerySettings.update_interval_unit === 'hours' ? 'selected' : ''}>Hours</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" id="cancel-settings">Cancel</button>
+            <button class="btn-primary" id="save-settings">Save Settings</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Add modal styles
+    const style = document.createElement('style');
+    style.textContent = `
+      .settings-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1000;
+      }
+      .modal-backdrop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .modal-content {
+        background: white;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px;
+        border-bottom: 1px solid #dee2e6;
+      }
+      .modal-header h2 {
+        margin: 0;
+        color: #212529;
+      }
+      .close-btn {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #6c757d;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .close-btn:hover {
+        color: #212529;
+      }
+      .modal-body {
+        padding: 24px;
+      }
+      .settings-section {
+        margin-bottom: 32px;
+      }
+      .settings-section h3 {
+        margin: 0 0 16px 0;
+        color: #495057;
+        font-size: 1.1rem;
+      }
+      .settings-note {
+        margin: 0 0 16px 0;
+        color: #6c757d;
+        font-size: 0.9rem;
+        font-style: italic;
+      }
+      .form-group {
+        margin-bottom: 16px;
+      }
+      .form-group-row {
+        display: flex;
+        gap: 16px;
+      }
+      .form-group-row .form-group {
+        flex: 1;
+      }
+      .form-group label {
+        display: block;
+        margin-bottom: 4px;
+        font-weight: 500;
+        color: #495057;
+      }
+      .form-group input,
+      .form-group select,
+      .form-group textarea {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      .form-group textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid #dee2e6;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+    `;
+
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(modal);
+
+    // Attach event listeners
+    modal.querySelector('#close-modal').addEventListener('click', () => {
+      this.shadowRoot.removeChild(modal);
+      this.shadowRoot.removeChild(style);
+    });
+
+    modal.querySelector('#cancel-settings').addEventListener('click', () => {
+      this.shadowRoot.removeChild(modal);
+      this.shadowRoot.removeChild(style);
+    });
+
+    modal.querySelector('#save-settings').addEventListener('click', () => {
+      this.saveSettingsFromModal(gallery, modal, style);
+    });
+
+    // Close on backdrop click
+    modal.querySelector('.modal-backdrop').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) {
+        this.shadowRoot.removeChild(modal);
+        this.shadowRoot.removeChild(style);
+      }
+    });
+  }
+
+  async saveSettingsFromModal(gallery, modal, style) {
+    try {
+      // Get gallery settings
+      const galleryName = modal.querySelector('#gallery-name').value;
+      const galleryDescription = modal.querySelector('#gallery-description').value;
+
+      // Get photo frame settings for this gallery
+      const orderMode = modal.querySelector('#order-mode').value;
+      const cropMode = modal.querySelector('#crop-mode').value;
+      const updateIntervalValue = modal.querySelector('#update-interval-value').value;
+      const updateIntervalUnit = modal.querySelector('#update-interval-unit').value;
+
+      // Save gallery properties
+      const galleryRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          name: newName, 
-          description: newDescription 
+          name: galleryName, 
+          description: galleryDescription 
         })
       });
-      
-      if (res.ok) {
+
+      // Save gallery-specific display settings
+      const gallerySettings = {
+        order_mode: orderMode,
+        crop_mode: cropMode,
+        update_interval_value: parseInt(updateIntervalValue),
+        update_interval_unit: updateIntervalUnit
+      };
+
+      const settingsRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}/settings`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gallerySettings)
+      });
+
+      if (galleryRes.ok && settingsRes.ok) {
         await this.refreshData();
         this.render();
         this.attachEventListeners();
+        
+        // Close modal
+        this.shadowRoot.removeChild(modal);
+        this.shadowRoot.removeChild(style);
       } else {
-        console.error('Failed to update gallery');
-        alert('Failed to update gallery settings');
+        if (!galleryRes.ok) console.error('Failed to update gallery');
+        if (!settingsRes.ok) console.error('Failed to update gallery display settings');
+        alert('Failed to save some settings');
       }
     } catch (error) {
-      console.error('Error updating gallery:', error);
-      alert('Error updating gallery settings');
+      console.error('Error saving settings:', error);
+      alert('Error saving settings');
     }
   }
 

@@ -203,8 +203,8 @@ class PhotoFrameChannel(BaseChannel):
         Args:
             resolution: (width, height) in pixels
             orientation: "landscape" or "portrait"
-            settings: User configuration from Mimir Platform
-            subchannel_id: Optional gallery ID to select from
+            settings: User configuration from Mimir Platform (deprecated - use gallery settings)
+            subchannel_id: Gallery ID to select from (required for proper settings)
         """
         try:
             # Create resolution-specific directory
@@ -220,8 +220,16 @@ class PhotoFrameChannel(BaseChannel):
             if subchannel_id:
                 print(f"📁 Using gallery: {subchannel_id}")
             
-            # Get current settings
-            current_settings = settings or {}
+            # Get settings from gallery if specified, otherwise use global settings
+            if subchannel_id:
+                try:
+                    current_settings = self.get_gallery_settings(subchannel_id)
+                    print(f"📋 Using gallery-specific settings: {current_settings}")
+                except ValueError:
+                    print(f"⚠️ Gallery '{subchannel_id}' not found, using global settings")
+                    current_settings = settings or {}
+            else:
+                current_settings = settings or {}
             
             # Get next image based on gallery selection or all images
             if subchannel_id:
@@ -424,6 +432,13 @@ class PhotoFrameChannel(BaseChannel):
         @router.delete("/images/{image_id}")
         async def delete_image(image_id: str):
             """Delete image from collection"""
+            # First remove from all galleries
+            for gallery in self._galleries:
+                if image_id in gallery.get("contentIds", []):
+                    gallery["contentIds"].remove(image_id)
+            self._save_galleries()
+            
+            # Then delete the image files and metadata
             success = self.metadata.delete_image(image_id)
             
             if success:
@@ -618,6 +633,53 @@ class PhotoFrameChannel(BaseChannel):
                 return JSONResponse({"success": True, **results})
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to regenerate thumbnails: {str(e)}")
+
+        @router.get("/subchannels/{subchannel_id}/settings")
+        async def get_gallery_settings(subchannel_id: str):
+            """Get display settings for a specific gallery"""
+            try:
+                settings = self.get_gallery_settings(subchannel_id)
+                
+                # Format as Mimir expects (with type and value structure)
+                formatted_settings = {}
+                for key, value in settings.items():
+                    if key in ["update_interval_value"]:
+                        formatted_settings[key] = {"type": "integer", "value": value}
+                    elif key in ["slideshow_enabled"]:
+                        formatted_settings[key] = {"type": "boolean", "value": value}
+                    else:
+                        formatted_settings[key] = {"type": "string", "value": value}
+                
+                return JSONResponse(formatted_settings)
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get gallery settings: {str(e)}")
+
+        @router.put("/subchannels/{subchannel_id}/settings")
+        async def update_gallery_settings_endpoint(subchannel_id: str, request: Request):
+            """Update display settings for a specific gallery"""
+            try:
+                settings_data = await request.json()
+                
+                # Extract values from Mimir format if needed
+                clean_settings = {}
+                for key, value in settings_data.items():
+                    if isinstance(value, dict) and "value" in value:
+                        clean_settings[key] = value["value"]
+                    else:
+                        clean_settings[key] = value
+                
+                success = self.update_gallery_settings(subchannel_id, clean_settings)
+                
+                if success:
+                    return JSONResponse({"success": True})
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to update gallery settings")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to update gallery settings: {str(e)}")
         
         return router
     
@@ -967,6 +1029,9 @@ class PhotoFrameChannel(BaseChannel):
         
         gallery_id = self._generate_subchannel_id(data["name"])
         
+        # Get default settings from config or use hardcoded defaults
+        default_settings = self._config.get("settings", {}).get("defaults", {})
+        
         gallery = {
             "id": gallery_id,
             "name": data["name"],
@@ -976,7 +1041,16 @@ class PhotoFrameChannel(BaseChannel):
             "created": datetime.now(timezone.utc).isoformat(),
             "modified": datetime.now(timezone.utc).isoformat(),
             "imageCount": 0,
-            "coverImageId": None
+            "coverImageId": None,
+            # Display settings for this gallery
+            "displaySettings": {
+                "order_mode": default_settings.get("order_mode", "added"),
+                "crop_mode": default_settings.get("crop_mode", "smart_crop"),
+                "transition_effect": default_settings.get("transition_effect", "fade"),
+                "update_interval_value": default_settings.get("update_interval_value", 30),
+                "update_interval_unit": default_settings.get("update_interval_unit", "minutes"),
+                "slideshow_enabled": default_settings.get("slideshow_enabled", True)
+            }
         }
         
         self._galleries.append(gallery)
@@ -995,6 +1069,24 @@ class PhotoFrameChannel(BaseChannel):
                     gallery["description"] = data["description"]
                 if "tags" in data:
                     gallery["tags"] = data["tags"]
+                if "cover_image_id" in data:
+                    gallery["coverImageId"] = data["cover_image_id"]
+                
+                # Update display settings if provided
+                if "displaySettings" in data:
+                    # Ensure displaySettings exists
+                    if "displaySettings" not in gallery:
+                        gallery["displaySettings"] = {}
+                    
+                    # Validate and update each setting
+                    display_settings = data["displaySettings"]
+                    for key, value in display_settings.items():
+                        if key in ["order_mode", "crop_mode", "transition_effect", "update_interval_unit"]:
+                            gallery["displaySettings"][key] = value
+                        elif key in ["update_interval_value"]:
+                            gallery["displaySettings"][key] = int(value)
+                        elif key in ["slideshow_enabled"]:
+                            gallery["displaySettings"][key] = bool(value)
                 
                 gallery["modified"] = datetime.now(timezone.utc).isoformat()
                 self._save_galleries()
@@ -1105,6 +1197,70 @@ class PhotoFrameChannel(BaseChannel):
             if gallery["id"] == gallery_id:
                 return gallery
         return None
+    
+    def get_gallery_settings(self, gallery_id: str) -> Dict[str, Any]:
+        """Get display settings for a specific gallery"""
+        gallery = self._find_gallery(gallery_id)
+        if not gallery:
+            raise ValueError(f"Gallery '{gallery_id}' not found")
+        
+        # Return display settings, falling back to defaults if not set
+        default_settings = self._config.get("settings", {}).get("defaults", {})
+        display_settings = gallery.get("displaySettings", {})
+        
+        return {
+            "order_mode": display_settings.get("order_mode", default_settings.get("order_mode", "added")),
+            "crop_mode": display_settings.get("crop_mode", default_settings.get("crop_mode", "smart_crop")),
+            "transition_effect": display_settings.get("transition_effect", default_settings.get("transition_effect", "fade")),
+            "update_interval_value": display_settings.get("update_interval_value", default_settings.get("update_interval_value", 30)),
+            "update_interval_unit": display_settings.get("update_interval_unit", default_settings.get("update_interval_unit", "minutes")),
+            "slideshow_enabled": display_settings.get("slideshow_enabled", default_settings.get("slideshow_enabled", True))
+        }
+    
+    def update_gallery_settings(self, gallery_id: str, settings: Dict[str, Any]) -> bool:
+        """Update display settings for a specific gallery"""
+        gallery = self._find_gallery(gallery_id)
+        if not gallery:
+            raise ValueError(f"Gallery '{gallery_id}' not found")
+        
+        # Validate settings (synchronous validation)
+        valid_orders = ["added", "random", "custom"]
+        valid_crops = ["smart_crop", "letterbox", "stretch"]
+        valid_transitions = ["fade", "slide", "none"]
+        valid_units = ["days", "hours", "minutes", "seconds"]
+        
+        if "order_mode" in settings and settings["order_mode"] not in valid_orders:
+            raise ValueError(f"Invalid order_mode. Must be one of: {', '.join(valid_orders)}")
+        if "crop_mode" in settings and settings["crop_mode"] not in valid_crops:
+            raise ValueError(f"Invalid crop_mode. Must be one of: {', '.join(valid_crops)}")
+        if "transition_effect" in settings and settings["transition_effect"] not in valid_transitions:
+            raise ValueError(f"Invalid transition_effect. Must be one of: {', '.join(valid_transitions)}")
+        if "update_interval_unit" in settings and settings["update_interval_unit"] not in valid_units:
+            raise ValueError(f"Invalid update_interval_unit. Must be one of: {', '.join(valid_units)}")
+        if "update_interval_value" in settings:
+            try:
+                value = int(settings["update_interval_value"])
+                if value < 1:
+                    raise ValueError("update_interval_value must be at least 1")
+            except (TypeError, ValueError):
+                raise ValueError("update_interval_value must be a valid positive integer")
+        
+        # Ensure displaySettings exists
+        if "displaySettings" not in gallery:
+            gallery["displaySettings"] = {}
+        
+        # Update settings
+        for key, value in settings.items():
+            if key in ["order_mode", "crop_mode", "transition_effect", "update_interval_unit"]:
+                gallery["displaySettings"][key] = value
+            elif key in ["update_interval_value"]:
+                gallery["displaySettings"][key] = int(value)
+            elif key in ["slideshow_enabled"]:
+                gallery["displaySettings"][key] = bool(value)
+        
+        gallery["modified"] = datetime.now(timezone.utc).isoformat()
+        self._save_galleries()
+        return True
     
     async def _get_next_image_from_gallery(
         self, 
