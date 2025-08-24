@@ -180,4 +180,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-channel/photo-frame/assets/uploads/
+# Runtime data that should not be versioned
+channels/photo_frame/assets/uploads/
+channels/photo_frame/data/
+channels/photo_frame/current.jpg

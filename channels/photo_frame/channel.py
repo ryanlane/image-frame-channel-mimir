@@ -12,12 +12,14 @@ from fastapi.responses import JSONResponse, FileResponse
 try:
     from .utils.image_processor import ImageProcessor
     from .utils.database import PhotoFrameDB
+    from .utils.file_metadata import FileMetadataManager
 except ImportError:
     # Fallback for standalone testing
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
     from utils.image_processor import ImageProcessor
     from utils.database import PhotoFrameDB
+    from utils.file_metadata import FileMetadataManager
 
 # BaseChannel interface for Mimir Platform integration
 class BaseChannel:
@@ -87,13 +89,18 @@ class PhotoFrameChannel(BaseChannel):
         self._config = self._load_config()
         
         # Initialize components
+        # Keep database for settings only
         self.db = PhotoFrameDB(self.channel_dir / "data" / "photo_frame.db")
+        
+        # Use file-based metadata for images
+        self.metadata = FileMetadataManager(self.channel_dir / "assets" / "uploads")
+        
+        # Image processor with new thumbnail approach
         self.image_processor = ImageProcessor(
-            upload_dir=self.channel_dir / "assets" / "uploads",
-            thumb_dir=self.channel_dir / "data" / "thumbs"
+            upload_dir=self.channel_dir / "assets" / "uploads"
         )
         
-        # Gallery management
+        # Gallery management (keep existing file-based approach)
         self.galleries_file = self.channel_dir / "data" / "galleries.json"
         self._galleries = self._load_galleries()
         
@@ -321,8 +328,9 @@ class PhotoFrameChannel(BaseChannel):
     
     def get_status(self) -> Dict[str, Any]:
         """Get channel status for debugging"""
-        image_count = self.db.get_image_count()
-        enabled_count = self.db.get_enabled_image_count()
+        all_images = self.metadata.get_all_images()
+        image_count = len(all_images)
+        enabled_count = len([img for img in all_images if img.get("enabled", True)])
         
         return {
             "last_update": self.last_update.isoformat() if self.last_update else None,
@@ -341,7 +349,7 @@ class PhotoFrameChannel(BaseChannel):
         @router.get("/images")
         async def list_images():
             """List all uploaded images with metadata"""
-            images = self.db.get_all_images()
+            images = self.metadata.get_all_images()
             return JSONResponse(images)
 
         @router.post("/upload")
@@ -351,11 +359,11 @@ class PhotoFrameChannel(BaseChannel):
             
             for file in files:
                 try:
-                    # Process upload
+                    # Process upload (saves image and thumbnail)
                     image_data = await self.image_processor.save_upload(file)
                     
-                    # Add to database
-                    image_id = self.db.add_image(image_data)
+                    # Add metadata file
+                    image_id = self.metadata.add_image(image_data)
                     
                     results.append({
                         "filename": file.filename,
@@ -385,7 +393,7 @@ class PhotoFrameChannel(BaseChannel):
         ):
             """Update image metadata and crop settings"""
             
-            success = self.db.update_image(image_id, {
+            updates = {
                 "title": title,
                 "description": description,
                 "crop_x": crop_x,
@@ -393,7 +401,9 @@ class PhotoFrameChannel(BaseChannel):
                 "crop_width": crop_width,
                 "crop_height": crop_height,
                 "preserve_aspect_ratio": preserve_aspect_ratio
-            })
+            }
+            
+            success = self.metadata.update_image(str(image_id), updates)
             
             if success:
                 return JSONResponse({"success": True})
@@ -403,18 +413,18 @@ class PhotoFrameChannel(BaseChannel):
         @router.post("/images/{image_id}/toggle")
         async def toggle_image(image_id: int):
             """Enable/disable image in slideshow"""
-            success = self.db.toggle_image_enabled(image_id)
+            success = self.metadata.toggle_image_enabled(str(image_id))
             
             if success:
-                image = self.db.get_image(image_id)
-                return JSONResponse({"success": True, "enabled": image["enabled"]})
+                image = self.metadata.get_image(str(image_id))
+                return JSONResponse({"success": True, "enabled": image["enabled"] if image else False})
             else:
                 raise HTTPException(status_code=404, detail="Image not found")
 
         @router.delete("/images/{image_id}")
         async def delete_image(image_id: int):
             """Delete image from collection"""
-            success = self.db.delete_image(image_id)
+            success = self.metadata.delete_image(str(image_id))
             
             if success:
                 return JSONResponse({"success": True})
@@ -433,7 +443,7 @@ class PhotoFrameChannel(BaseChannel):
                     raise HTTPException(status_code=400, detail="Both dragged_id and target_id required")
                 
                 # Get all images with current sort order
-                images = self.db.get_all_images()
+                images = self.metadata.get_all_images()
                 images.sort(key=lambda x: x.get("sort_order", 0))
                 
                 # Find the dragged and target images
@@ -452,7 +462,7 @@ class PhotoFrameChannel(BaseChannel):
                 
                 # Update sort_order for all images
                 for i, img in enumerate(images):
-                    self.db.update_image(img["id"], {"sort_order": i})
+                    self.metadata.update_image(str(img["id"]), {"sort_order": i})
                 
                 return JSONResponse({"success": True})
                 
@@ -534,8 +544,11 @@ class PhotoFrameChannel(BaseChannel):
 
         @router.get("/data/thumbs/{filename}")
         async def get_thumbnail(filename: str):
-            """Serve thumbnail images"""
-            thumb_path = self.channel_dir / "data" / "thumbs" / filename
+            """Serve thumbnail images (legacy endpoint)"""
+            # Convert to new thumbnail format
+            base_name = Path(filename).stem
+            thumb_filename = f"{base_name}.thumb.jpg"
+            thumb_path = self.channel_dir / "assets" / "uploads" / thumb_filename
             
             if not thumb_path.exists():
                 raise HTTPException(status_code=404, detail="Thumbnail not found")
@@ -545,18 +558,152 @@ class PhotoFrameChannel(BaseChannel):
                 media_type="image/jpeg",
                 headers={"Cache-Control": "max-age=3600"}
             )
+
+        @router.get("/assets/uploads/{filename}")
+        async def get_upload_file(filename: str):
+            """Serve uploaded files (images and thumbnails)"""
+            file_path = self.channel_dir / "assets" / "uploads" / filename
+            
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="File not found")
+            
+            # Determine media type
+            if filename.endswith('.jpg') or filename.endswith('.jpeg'):
+                media_type = "image/jpeg"
+            elif filename.endswith('.png'):
+                media_type = "image/png"
+            elif filename.endswith('.gif'):
+                media_type = "image/gif"
+            else:
+                media_type = "application/octet-stream"
+            
+            return FileResponse(
+                path=str(file_path),
+                media_type=media_type,
+                headers={"Cache-Control": "max-age=3600"}
+            )
+
+        @router.post("/regenerate-thumbnails")
+        async def regenerate_thumbnails():
+            """Regenerate thumbnails for all existing images"""
+            try:
+                count = await self._regenerate_all_thumbnails()
+                return JSONResponse({"success": True, "thumbnails_generated": count})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to regenerate thumbnails: {str(e)}")
+
+        @router.post("/rebuild-database")
+        async def rebuild_database():
+            """Rebuild database from existing files in uploads directory"""
+            try:
+                count = await self._rebuild_database_from_files()
+                return JSONResponse({"success": True, "images_added": count})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to rebuild database: {str(e)}")
+
+        @router.post("/sync-filesystem")
+        async def sync_filesystem():
+            """Sync metadata files with filesystem state"""
+            try:
+                results = self.metadata.sync_filesystem()
+                return JSONResponse({"success": True, **results})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to sync filesystem: {str(e)}")
         
         return router
+    
+    async def _regenerate_all_thumbnails(self):
+        """Regenerate thumbnails for all images in the database"""
+        from PIL import Image
+        
+        images = self.metadata.get_all_images()
+        thumbnails_dir = self.channel_dir / "data" / "thumbs"
+        uploads_dir = self.channel_dir / "assets" / "uploads"
+        
+        # Ensure thumbnails directory exists
+        thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        
+        count = 0
+        for image in images:
+            filename = image["filename"]
+            source_path = uploads_dir / filename
+            thumb_path = thumbnails_dir / filename
+            
+            if source_path.exists():
+                try:
+                    # Generate thumbnail
+                    with Image.open(source_path) as img:
+                        # Create thumbnail (150x150 max, maintaining aspect ratio)
+                        thumbnail = img.copy()
+                        thumbnail.thumbnail((150, 150), Image.LANCZOS)
+                        
+                        # Save thumbnail as JPEG
+                        if filename.lower().endswith('.png'):
+                            # Convert PNG to JPEG for thumbnails
+                            thumbnail = thumbnail.convert('RGB')
+                        
+                        thumbnail.save(thumb_path, "JPEG", quality=85)
+                        count += 1
+                        print(f"Generated thumbnail for {filename}")
+                except Exception as e:
+                    print(f"Failed to generate thumbnail for {filename}: {e}")
+        
+        return count
+    
+    async def _rebuild_database_from_files(self):
+        """Rebuild database from existing files in uploads directory"""
+        from PIL import Image
+        import os
+        
+        uploads_dir = self.channel_dir / "assets" / "uploads"
+        count = 0
+        
+        if not uploads_dir.exists():
+            return 0
+        
+        # Get all image files from uploads directory
+        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
+        
+        for file_path in uploads_dir.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                try:
+                    # Check if image already exists in metadata
+                    existing = self.metadata.get_image_by_filename(file_path.name)
+                    if existing:
+                        print(f"Image {file_path.name} already exists in metadata, skipping")
+                        continue
+                    
+                    # Get image dimensions
+                    with Image.open(file_path) as img:
+                        width, height = img.size
+                    
+                    # Add to file metadata system
+                    image_data = {
+                        "filename": file_path.name,
+                        "original_name": file_path.name,
+                        "width": width,
+                        "height": height
+                    }
+                    
+                    self.metadata.add_image(image_data)
+                    count += 1
+                    print(f"Added image {file_path.name} to file metadata system")
+                    
+                except Exception as e:
+                    print(f"Failed to process {file_path.name}: {e}")
+        
+        return count
     
     async def _get_next_image(self, settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Select next image based on slideshow settings"""
         if not settings.get("slideshow_enabled", True):
             # If slideshow disabled, return current image
             if self.current_image_id:
-                return self.db.get_image(self.current_image_id)
+                return self.metadata.get_image(str(self.current_image_id))
             
         order_mode = settings.get("order_mode", "added")
-        enabled_images = self.db.get_enabled_images()
+        all_images = self.metadata.get_all_images()
+        enabled_images = [img for img in all_images if img.get("enabled", True)]
         
         if not enabled_images:
             return None
@@ -668,10 +815,12 @@ class PhotoFrameChannel(BaseChannel):
     
     async def _update_image_stats(self, image_id: int):
         """Update image display statistics"""
-        self.db.update_image(image_id, {
-            "times_shown": self.db.get_image(image_id)["times_shown"] + 1,
-            "last_shown_at": datetime.now(timezone.utc).isoformat()
-        })
+        image = self.metadata.get_image(str(image_id))
+        if image:
+            self.metadata.update_image(str(image_id), {
+                "times_shown": image.get("times_shown", 0) + 1,
+                "last_shown_at": datetime.now(timezone.utc).isoformat()
+            })
     
     def _get_storage_usage(self) -> Dict[str, Any]:
         """Calculate storage usage"""
@@ -697,9 +846,10 @@ class PhotoFrameChannel(BaseChannel):
             return self.config["current_image"]
         
         # Try any enabled image
-        images = self.db.get_enabled_images()
-        if images:
-            return await self._render_simple_fallback(images[0])
+        all_images = self.metadata.get_all_images()
+        enabled_images = [img for img in all_images if img.get("enabled", True)]
+        if enabled_images:
+            return await self._render_simple_fallback(enabled_images[0])
         
         # Use placeholder
         return self.config["placeholder_image"]
@@ -805,7 +955,8 @@ class PhotoFrameChannel(BaseChannel):
             raise ValueError(f"Gallery '{subchannel_id}' not found")
         
         # Validate that content_ids are valid image IDs
-        valid_image_ids = {str(img["id"]) for img in self.db.get_all_images()}
+        all_images = self.metadata.get_all_images()
+        valid_image_ids = {str(img["id"]) for img in all_images}
         invalid_ids = set(content_ids) - valid_image_ids
         if invalid_ids:
             raise ValueError(f"Invalid image IDs: {', '.join(invalid_ids)}")
@@ -858,15 +1009,15 @@ class PhotoFrameChannel(BaseChannel):
         # Get detailed image data
         images = []
         for content_id in content_ids:
-            image_data = self.db.get_image_by_id(int(content_id))
+            image_data = self.metadata.get_image(str(content_id))
             if image_data:
                 images.append({
                     "id": str(image_data["id"]),
                     "name": image_data.get("title", image_data["original_name"]),
                     "filename": image_data["filename"],
-                    "thumbnailUrl": f"/api/channels/{self.id}/data/thumbs/{image_data['filename']}",
+                    "thumbnailUrl": f"/api/channels/{self.id}/assets/uploads/{Path(image_data['filename']).stem}.thumb.jpg",
                     "uploadUrl": f"/api/channels/{self.id}/assets/uploads/{image_data['filename']}",
-                    "enabled": image_data["enabled"],
+                    "enabled": image_data.get("enabled", True),
                     "uploaded": image_data["upload_time"],
                     "description": image_data.get("description", ""),
                     "tags": image_data.get("tags", [])
@@ -898,8 +1049,8 @@ class PhotoFrameChannel(BaseChannel):
         # Get image data for images in this gallery
         gallery_images = []
         for content_id in gallery["contentIds"]:
-            image_data = self.db.get_image_by_id(int(content_id))
-            if image_data and image_data["enabled"]:
+            image_data = self.metadata.get_image(str(content_id))
+            if image_data and image_data.get("enabled", True):
                 gallery_images.append(image_data)
         
         if gallery_images:

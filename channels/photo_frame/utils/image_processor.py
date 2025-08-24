@@ -2,15 +2,21 @@ from PIL import Image, ImageOps
 from pathlib import Path
 
 class ImageProcessor:
-    def __init__(self, upload_dir: Path, thumb_dir: Path):
+    def __init__(self, upload_dir: Path, thumb_dir: Path = None):
         self.upload_dir = upload_dir
-        self.thumb_dir = thumb_dir
+        # thumb_dir is now unused, thumbnails go next to images
+        # Keeping parameter for backward compatibility
+        
+    def _get_thumbnail_path(self, image_filename: str) -> Path:
+        """Get the path where the thumbnail should be stored"""
+        base_name = Path(image_filename).stem
+        return self.upload_dir / f"{base_name}.thumb.jpg"
 
     async def save_upload(self, upload_file):
         # Save uploaded image and return metadata
         filename = upload_file.filename
         dest_path = self.upload_dir / filename
-        thumb_path = self.thumb_dir / filename
+        thumb_path = self._get_thumbnail_path(filename)
         
         # Save original file
         with open(dest_path, 'wb') as f:
@@ -24,10 +30,11 @@ class ImageProcessor:
             thumbnail = img.copy()
             thumbnail.thumbnail((150, 150), Image.LANCZOS)
             
-            # Ensure thumbnail directory exists
-            self.thumb_dir.mkdir(parents=True, exist_ok=True)
+            # Convert to RGB if needed (for PNG with transparency)
+            if thumbnail.mode in ('RGBA', 'LA', 'P'):
+                thumbnail = thumbnail.convert('RGB')
             
-            # Save thumbnail
+            # Save thumbnail as JPEG next to the original image
             thumbnail.save(thumb_path, "JPEG", quality=85)
         
         return {

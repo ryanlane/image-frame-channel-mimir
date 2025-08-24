@@ -50,7 +50,10 @@ class ImageCard extends HTMLElement {
   render() {
     if (!this.image) return;
     const apiBaseUrl = window.mimirServerBaseUrl || window.location.origin;
-    const thumbnailUrl = `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/data/thumbs/${this.image.filename}`;
+    
+    // Use new thumbnail format: basename.thumb.jpg
+    const baseName = this.image.filename.split('.')[0];
+    const thumbnailUrl = `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${baseName}.thumb.jpg`;
 
     this.shadowRoot.innerHTML = `
       <style>

@@ -64,6 +64,16 @@ class PhotoFrameDB:
             return dict(zip([d[0] for d in c.description], row))
         return None
 
+    def get_image_by_filename(self, filename: str) -> Optional[Dict[str, Any]]:
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute('SELECT * FROM images WHERE filename=?', (filename,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return dict(zip([d[0] for d in c.description], row))
+        return None
+
     def get_all_images(self) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
