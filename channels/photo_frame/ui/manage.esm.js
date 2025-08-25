@@ -906,19 +906,32 @@ class XPhotoFrameManager extends HTMLElement {
       
       if (res.ok) {
         console.log('Images reordered successfully, refreshing gallery data...');
-        // Just refresh the galleries data to get the new order
+        
+        // Fetch fresh galleries data
         const galleriesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, { credentials: 'include' });
         if (galleriesRes.ok) {
           const galleriesData = await galleriesRes.json();
+          console.log('Fresh galleries data received:', galleriesData);
+          
           this.state.galleries = Array.isArray(galleriesData?.subChannels) ? galleriesData.subChannels : [];
+          
+          // Find the updated gallery
+          const updatedGallery = this.state.galleries.find(g => g.id === galleryId);
+          console.log('Updated gallery:', updatedGallery);
+          console.log('Updated contentIds:', updatedGallery?.contentIds);
           
           // Re-populate just the image cards
           const gridContainer = this.shadowRoot.getElementById('image-grid');
           if (gridContainer) {
+            console.log('Clearing and repopulating image grid');
             gridContainer.innerHTML = ''; // Clear existing cards
             this.populateImageCards();
             console.log('Image cards updated with new order');
+          } else {
+            console.error('Could not find image-grid container');
           }
+        } else {
+          console.error('Failed to fetch fresh galleries data');
         }
       } else {
         const errorData = await res.text();
