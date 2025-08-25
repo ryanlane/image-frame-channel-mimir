@@ -928,8 +928,14 @@ class XPhotoFrameManager extends HTMLElement {
       if (res.ok) {
         console.log('Images reordered successfully, refreshing gallery data...');
         
+        // Add a small delay to ensure the backend has fully saved the changes
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         // Fetch fresh galleries data
-        const galleriesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, { credentials: 'include' });
+        const galleriesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, { 
+          credentials: 'include',
+          cache: 'no-cache' // Force fresh data, no caching
+        });
         if (galleriesRes.ok) {
           const galleriesData = await galleriesRes.json();
           console.log('Fresh galleries data received:', galleriesData);

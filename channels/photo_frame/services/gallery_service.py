@@ -65,6 +65,11 @@ class GalleryService:
             json.dump(galleries_data, f, indent=2)
             
         print(f"DEBUG SAVE: Galleries saved to file")
+        
+        # Reload galleries from file to ensure in-memory copy is fresh
+        print(f"DEBUG SAVE: Reloading galleries from file")
+        self._galleries = self._load_galleries()
+        print(f"DEBUG SAVE: Galleries reloaded, count: {len(self._galleries)}")
     
     def _generate_gallery_id(self, name: str) -> str:
         """Generate unique ID from gallery name"""
