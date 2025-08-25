@@ -5,27 +5,18 @@ import re
 """
 Photo Frame Channel for Mimir Platform v2.4+ with Gallery Support
 
-REFACTORING STATUS: ✅ COMPLETE
+REFACTORING PROGRESS:
 ✅ MODELS: Extracted to models/ directory
   - models/gallery.py: Gallery data models and operations
   - models/image.py: Image metadata and upload handling  
   - models/settings.py: Settings validation and management
 
-✅ SERVICES: Extracted to services/ directory
-  - services/gallery_service.py: Gallery business logic
-  - services/image_service.py: Image processing and metadata
-  - services/rendering_service.py: Display rendering logic
-  - services/storage_service.py: File and data management
-
-✅ ROUTES: Extracted to routes/ directory  
-  - routes/images.py: Image upload, management, and reordering
-  - routes/galleries.py: Gallery (sub-channel) operations
-  - routes/settings.py: Configuration management
-  - routes/assets.py: Static file serving
-  - routes/admin.py: Administrative operations
+🔄 TODO: Extract remaining components
+  - services/: Business logic (gallery, image, rendering services)
+  - routes/: API endpoint handlers
+  - core/: Configuration and dependencies
 
 This channel provides digital photo frame functionality with intelligent image management and galleries.
-Architecture: Modular FastAPI design with dependency injection and service layer separation.
 """
 
 from datetime import datetime, timezone
@@ -214,6 +205,51 @@ class PhotoFrameChannel(BaseChannel):
         """Channel configuration"""
         return self._config
     
+    # async def render_image(
+    #     self, 
+    #     resolution: Tuple[int, int], 
+    #     orientation: str, 
+    #     settings: Dict[str, Any]
+    # ) -> str:
+    #     """
+    #     Generate/select next image for display
+        
+    #     Args:
+    #         resolution: (width, height) in pixels
+    #         orientation: "landscape" or "portrait"
+    #         settings: User configuration from Mimir Platform
+            
+    #     Returns:
+    #         Relative path to image file
+    #     """
+    #     try:
+    #         # Get next image based on slideshow settings
+    #         image_record = await self._get_next_image(settings)
+            
+    #         if not image_record:
+    #             # No images available, return placeholder
+    #             return self.config["placeholder_image"]
+            
+    #         # Process image for display
+    #         output_path = await self._process_image_for_display(
+    #             image_record, resolution, orientation, settings
+    #         )
+            
+    #         # Update statistics
+    #         await self._update_image_stats(image_record["id"])
+            
+    #         self.current_image_id = image_record["id"]
+    #         self.last_update = datetime.now(timezone.utc)
+    #         self.last_error = None
+            
+    #         return self.config["current_image"]
+            
+    #     except Exception as e:
+    #         self.last_error = str(e)
+    #         # Return last successful image or placeholder
+    #         return await self._get_fallback_image()
+    
+    
     async def render_image(self, resolution: tuple, orientation: str = "landscape", settings: dict = None, subchannel_id: str = None):
         """
         Render image for specific display resolution using resolution-based folder structure.
@@ -398,6 +434,360 @@ class PhotoFrameChannel(BaseChannel):
         
         return router
         
+        # OLD IMPLEMENTATION - DISABLED (kept for reference)
+        # TODO: Remove after confirming new routes work correctly
+        
+        @router.get("/images")
+        async def list_images():
+            """List all uploaded images with metadata"""
+            images = self.metadata.get_all_images()
+            return JSONResponse(images)
+
+        @router.post("/upload")
+        async def upload_images(files: List[UploadFile] = File(...)):
+            """Handle image uploads"""
+            results = []
+            
+            for file in files:
+                try:
+                    # Process upload (saves image and thumbnail)
+                    image_data = await self.image_processor.save_upload(file)
+                    
+                    # Add metadata file
+                    image_id = self.metadata.add_image(image_data)
+                    
+                    results.append({
+                        "filename": file.filename,
+                        "success": True,
+                        "image_id": image_id
+                    })
+                    
+                except Exception as e:
+                    results.append({
+                        "filename": file.filename,
+                        "success": False,
+                        "error": str(e)
+                    })
+            
+            return JSONResponse({"results": results})
+
+        @router.put("/images/{image_id}")
+        async def update_image(
+            image_id: str,
+            title: str = Form(""),
+            description: str = Form(""),
+            crop_x: float = Form(0),
+            crop_y: float = Form(0),
+            crop_width: float = Form(100),
+            crop_height: float = Form(100),
+            preserve_aspect_ratio: bool = Form(False)
+        ):
+            """Update image metadata and crop settings"""
+            
+            updates = {
+                "title": title,
+                "description": description,
+                "crop_x": crop_x,
+                "crop_y": crop_y,
+                "crop_width": crop_width,
+                "crop_height": crop_height,
+                "preserve_aspect_ratio": preserve_aspect_ratio
+            }
+            
+            success = self.metadata.update_image(image_id, updates)
+            
+            if success:
+                return JSONResponse({"success": True})
+            else:
+                raise HTTPException(status_code=404, detail="Image not found")
+
+        @router.post("/images/{image_id}/toggle")
+        async def toggle_image(image_id: str):
+            """Enable/disable image in slideshow"""
+            success = self.metadata.toggle_image_enabled(image_id)
+            
+            if success:
+                image = self.metadata.get_image_by_id(image_id)
+                return JSONResponse({"success": True, "enabled": image["enabled"] if image else False})
+            else:
+                raise HTTPException(status_code=404, detail="Image not found")
+
+        @router.delete("/images/{image_id}")
+        async def delete_image(image_id: str):
+            """Delete image from collection"""
+            # First remove from all galleries
+            for gallery in self._galleries:
+                if image_id in gallery.get("contentIds", []):
+                    gallery["contentIds"].remove(image_id)
+            self._save_galleries()
+            
+            # Then delete the image files and metadata
+            success = self.metadata.delete_image(image_id)
+            
+            if success:
+                return JSONResponse({"success": True})
+            else:
+                raise HTTPException(status_code=404, detail="Image not found")
+
+        @router.post("/images/reorder")
+        async def reorder_images(request: Request):
+            """Reorder images by updating sort_order"""
+            try:
+                data = await request.json()
+                dragged_id = data.get("dragged_id")
+                target_id = data.get("target_id")
+                
+                if not dragged_id or not target_id:
+                    raise HTTPException(status_code=400, detail="Both dragged_id and target_id required")
+                
+                # Get all images with current sort order
+                images = self.metadata.get_all_images()
+                images.sort(key=lambda x: x.get("sort_order", 0))
+                
+                # Find the dragged and target images
+                dragged_img = next((img for img in images if img["id"] == dragged_id), None)
+                target_img = next((img for img in images if img["id"] == target_id), None)
+                
+                if not dragged_img or not target_img:
+                    raise HTTPException(status_code=404, detail="Image not found")
+                
+                # Remove dragged image from list
+                images = [img for img in images if img["id"] != dragged_id]
+                
+                # Find target position and insert dragged image
+                target_index = next(i for i, img in enumerate(images) if img["id"] == target_id)
+                images.insert(target_index, dragged_img)
+                
+                # Update sort_order for all images
+                for i, img in enumerate(images):
+                    self.metadata.update_image(str(img["id"]), {"sort_order": i})
+                
+                return JSONResponse({"success": True})
+                
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @router.get("/settings")
+        async def get_settings():
+            """Get current photo frame configuration"""
+            # Get settings from database or use defaults
+            settings = self.db.get_settings()
+            if not settings:
+                # Return defaults from config if no settings stored
+                settings = self._config.get("settings", {}).get("defaults", {})
+            
+            return JSONResponse({
+                "slideshow_enabled": {
+                    "type": "boolean",
+                    "value": settings.get("slideshow_enabled", True)
+                },
+                "order_mode": {
+                    "type": "string", 
+                    "value": settings.get("order_mode", "added")
+                },
+                "crop_mode": {
+                    "type": "string",
+                    "value": settings.get("crop_mode", "smart_crop")
+                },
+                "transition_effect": {
+                    "type": "string",
+                    "value": settings.get("transition_effect", "fade")
+                },
+                "update_interval_unit": {
+                    "type": "string",
+                    "value": settings.get("update_interval_unit", "minutes")
+                },
+                "update_interval_value": {
+                    "type": "integer",
+                    "value": settings.get("update_interval_value", 30)
+                }
+            })
+
+        @router.put("/settings")
+        async def update_settings(request: Request):
+            """Update photo frame configuration"""
+            try:
+                settings_data = await request.json()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid JSON data")
+            
+            # Validate settings
+            errors = await self.validate_settings(settings_data)
+            if errors:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "errors": errors
+                    }
+                )
+            
+            # Update settings in database
+            success = self.db.update_settings(settings_data)
+            
+            if success:
+                return JSONResponse({"success": True})
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update settings")
+
+        @router.get("/hardware")
+        async def get_hardware():
+            """Get Inky display hardware info"""
+            # Mock hardware info for development
+            return JSONResponse({
+                "display": "Inky",
+                "resolution": [800, 600],
+                "orientation": "landscape"
+            })
+
+        @router.get("/data/thumbs/{filename}")
+        async def get_thumbnail(filename: str):
+            """Serve thumbnail images (legacy endpoint)"""
+            # Convert to new thumbnail format
+            base_name = Path(filename).stem
+            thumb_filename = f"{base_name}.thumb.jpg"
+            thumb_path = self.channel_dir / "assets" / "uploads" / thumb_filename
+            
+            if not thumb_path.exists():
+                raise HTTPException(status_code=404, detail="Thumbnail not found")
+            
+            return FileResponse(
+                path=str(thumb_path),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "max-age=3600"}
+            )
+
+        @router.get("/assets/uploads/{filename}")
+        async def get_upload_file(filename: str):
+            """Serve uploaded files (images and thumbnails)"""
+            file_path = self.channel_dir / "assets" / "uploads" / filename
+            
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="File not found")
+            
+            # Determine media type
+            if filename.endswith('.jpg') or filename.endswith('.jpeg'):
+                media_type = "image/jpeg"
+            elif filename.endswith('.png'):
+                media_type = "image/png"
+            elif filename.endswith('.gif'):
+                media_type = "image/gif"
+            else:
+                media_type = "application/octet-stream"
+            
+            return FileResponse(
+                path=str(file_path),
+                media_type=media_type,
+                headers={"Cache-Control": "max-age=3600"}
+            )
+
+        @router.post("/regenerate-thumbnails")
+        async def regenerate_thumbnails():
+            """Regenerate thumbnails for all existing images"""
+            try:
+                count = await self._regenerate_all_thumbnails()
+                return JSONResponse({"success": True, "thumbnails_generated": count})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to regenerate thumbnails: {str(e)}")
+
+        @router.post("/rebuild-database")
+        async def rebuild_database():
+            """Rebuild database from existing files in uploads directory"""
+            try:
+                count = await self._rebuild_database_from_files()
+                return JSONResponse({"success": True, "images_added": count})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to rebuild database: {str(e)}")
+
+        @router.post("/sync-filesystem")
+        async def sync_filesystem():
+            """Sync metadata files with filesystem state"""
+            try:
+                results = self.metadata.sync_filesystem()
+                return JSONResponse({"success": True, **results})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to sync filesystem: {str(e)}")
+
+        @router.post("/regenerate-thumbnails")
+        async def regenerate_thumbnails():
+            """Regenerate all thumbnails using the new co-located approach"""
+            try:
+                results = await self._regenerate_colocated_thumbnails()
+                return JSONResponse({"success": True, **results})
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to regenerate thumbnails: {str(e)}")
+
+        @router.get("/subchannels/{subchannel_id}/settings")
+        async def get_gallery_settings(subchannel_id: str):
+            """Get display settings for a specific gallery"""
+            try:
+                settings = self.get_gallery_settings(subchannel_id)
+                
+                # Format as Mimir expects (with type and value structure)
+                formatted_settings = {}
+                for key, value in settings.items():
+                    if key in ["update_interval_value"]:
+                        formatted_settings[key] = {"type": "integer", "value": value}
+                    elif key in ["slideshow_enabled"]:
+                        formatted_settings[key] = {"type": "boolean", "value": value}
+                    else:
+                        formatted_settings[key] = {"type": "string", "value": value}
+                
+                return JSONResponse(formatted_settings)
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get gallery settings: {str(e)}")
+
+        @router.put("/subchannels/{subchannel_id}/settings")
+        async def update_gallery_settings_endpoint(subchannel_id: str, request: Request):
+            """Update display settings for a specific gallery"""
+            try:
+                settings_data = await request.json()
+                
+                # Extract values from Mimir format if needed
+                clean_settings = {}
+                for key, value in settings_data.items():
+                    if isinstance(value, dict) and "value" in value:
+                        clean_settings[key] = value["value"]
+                    else:
+                        clean_settings[key] = value
+                
+                success = self.update_gallery_settings(subchannel_id, clean_settings)
+                
+                if success:
+                    return JSONResponse({"success": True})
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to update gallery settings")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to update gallery settings: {str(e)}")
+
+        @router.post("/subchannels/{subchannel_id}/images/reorder")
+        async def reorder_gallery_images_endpoint(subchannel_id: str, request: Request):
+            """Reorder images within a specific gallery"""
+            try:
+                data = await request.json()
+                dragged_id = data.get("dragged_id")
+                target_id = data.get("target_id")
+                
+                if not dragged_id or not target_id:
+                    raise HTTPException(status_code=400, detail="Both dragged_id and target_id are required")
+                
+                success = self.reorder_gallery_images(subchannel_id, str(dragged_id), str(target_id))
+                
+                if success:
+                    return JSONResponse({"success": True, "message": "Images reordered successfully"})
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to reorder images")
+                    
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to reorder gallery images: {str(e)}")
+        
+        return router
     
     async def _regenerate_all_thumbnails(self):
         """Regenerate thumbnails for all images in the database"""
