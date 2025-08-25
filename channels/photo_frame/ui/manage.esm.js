@@ -357,12 +357,21 @@ class XPhotoFrameManager extends HTMLElement {
 
     const galleryImages = this.state.allImages.filter(img => gallery.contentIds.includes(img.id.toString()));
     
-    galleryImages.forEach(image => {
+    console.log('populateImageCards debug:');
+    console.log('Gallery contentIds:', gallery.contentIds);
+    console.log('All images count:', this.state.allImages.length);
+    console.log('Filtered gallery images count:', galleryImages.length);
+    console.log('Gallery images order:', galleryImages.map(img => img.id));
+    
+    galleryImages.forEach((image, index) => {
+      console.log(`Creating card ${index} for image ${image.id}`);
       const card = document.createElement('image-card');
       card.image = image;
       card.isCover = gallery.coverImageId === image.id.toString();
       gridContainer.appendChild(card);
     });
+    
+    console.log('populateImageCards completed, grid container children:', gridContainer.children.length);
   }
 
   attachEventListeners() {
