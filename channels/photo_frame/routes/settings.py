@@ -209,16 +209,11 @@ class SubchannelSettingsRoutes:
                 dragged_id = data.get("dragged_id")
                 target_id = data.get("target_id")
                 
-                print(f"DEBUG ENDPOINT: Reorder request for subchannel {subchannel_id}")
-                print(f"DEBUG ENDPOINT: dragged_id={dragged_id}, target_id={target_id}")
-                
                 if not dragged_id or not target_id:
                     raise HTTPException(status_code=400, detail="Both dragged_id and target_id required")
                 
                 # Reorder images in the gallery
-                print(f"DEBUG ENDPOINT: Calling gallery_service.reorder_gallery_images")
                 success = self.gallery_service.reorder_gallery_images(subchannel_id, dragged_id, target_id)
-                print(f"DEBUG ENDPOINT: Reorder result: {success}")
                 
                 if success:
                     return JSONResponse({"success": True})

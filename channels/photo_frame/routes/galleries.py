@@ -201,25 +201,8 @@ class GalleryRoutes:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Image removal failed: {str(e)}")
 
-        @router.post("/{gallery_id}/images/reorder")
-        async def reorder_gallery_images(gallery_id: str, request: Request):
-            """Reorder images within a gallery"""
-            try:
-                data = await request.json()
-                image_ids = data.get("image_ids", [])
-                
-                if not image_ids:
-                    raise HTTPException(status_code=400, detail="image_ids array required")
-                
-                # Reorder images using service
-                await self.gallery_service.reorder_gallery_images(gallery_id, image_ids)
-                
-                return JSONResponse({"success": True})
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Image reorder failed: {str(e)}")
+        # Note: Image reordering is handled by the subchannel settings router
+        # at /subchannels/{subchannel_id}/images/reorder
         
         return router
 

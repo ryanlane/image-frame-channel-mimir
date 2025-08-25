@@ -93,7 +93,7 @@ def test_gallery_reorder():
                 # Remove dragged image
                 content_ids.remove(dragged_id)
                 
-                # Find target position and insert
+                # Find target position and insert BEFORE target (fixed)
                 target_index = content_ids.index(target_id)
                 content_ids.insert(target_index, dragged_id)
                 

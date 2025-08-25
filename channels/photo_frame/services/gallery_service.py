@@ -33,7 +33,7 @@ class GalleryService:
             return []
         
         try:
-            with open(self.galleries_file, 'r') as f:
+            with open(self.galleries_file, 'r', encoding='utf-8') as f:
                 galleries_data = json.load(f)
             
             galleries = []
@@ -48,28 +48,21 @@ class GalleryService:
     
     def _save_galleries(self) -> None:
         """Save galleries to JSON file"""
-        print(f"DEBUG SAVE: _save_galleries called")
-        print(f"DEBUG SAVE: galleries_file path: {self.galleries_file}")
-        
+        # Ensure directory exists
         self.galleries_file.parent.mkdir(parents=True, exist_ok=True)
         
         galleries_data = [gallery.to_dict() for gallery in self._galleries]
-        print(f"DEBUG SAVE: Saving {len(galleries_data)} galleries")
         
-        # Find the birds gallery and print its contentIds
-        for gallery_data in galleries_data:
-            if gallery_data.get('id') == 'birds':
-                print(f"DEBUG SAVE: birds gallery contentIds: {gallery_data.get('contentIds')}")
-        
-        with open(self.galleries_file, 'w') as f:
-            json.dump(galleries_data, f, indent=2)
-            
-        print(f"DEBUG SAVE: Galleries saved to file")
+        try:
+            with open(self.galleries_file, 'w', encoding='utf-8') as f:
+                json.dump(galleries_data, f, indent=2, ensure_ascii=False)
+                
+        except Exception as e:
+            print(f"Error saving galleries: {e}")
+            raise
         
         # Reload galleries from file to ensure in-memory copy is fresh
-        print(f"DEBUG SAVE: Reloading galleries from file")
         self._galleries = self._load_galleries()
-        print(f"DEBUG SAVE: Galleries reloaded, count: {len(self._galleries)}")
     
     def _generate_gallery_id(self, name: str) -> str:
         """Generate unique ID from gallery name"""
@@ -227,23 +220,19 @@ class GalleryService:
             dragged_id: ID of the image being moved
             target_id: ID of the image to place the dragged image before
         """
-        print(f"DEBUG SERVICE: reorder_gallery_images called with gallery_id={gallery_id}, dragged_id={dragged_id}, target_id={target_id}")
-        
         gallery = self.get_gallery(gallery_id)
         if not gallery:
-            print(f"DEBUG SERVICE: Gallery '{gallery_id}' not found")
             raise ValueError(f"Gallery '{gallery_id}' not found")
         
-        print(f"DEBUG SERVICE: Found gallery '{gallery_id}', calling reorder_images")
         success = gallery.reorder_images(dragged_id, target_id)
-        print(f"DEBUG SERVICE: reorder_images returned: {success}")
         
         if success:
-            print(f"DEBUG SERVICE: Saving galleries")
             self._save_galleries()
-            print(f"DEBUG SERVICE: Galleries saved")
+            return True
+        else:
+            # If reorder_images returned False, it means the images weren't found
+            raise ValueError(f"Could not reorder images: dragged_id '{dragged_id}' or target_id '{target_id}' not found in gallery '{gallery_id}'")
         
-        return success
     
     def get_gallery_settings(self, gallery_id: str) -> Dict[str, Any]:
         """Get display settings for a specific gallery"""

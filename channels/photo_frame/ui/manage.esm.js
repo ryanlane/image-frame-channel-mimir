@@ -355,6 +355,9 @@ class XPhotoFrameManager extends HTMLElement {
       return;
     }
 
+    // Clear existing cards before adding new ones
+    gridContainer.innerHTML = '';
+
     // Create a map for quick image lookup
     const imageMap = new Map();
     this.state.allImages.forEach(img => imageMap.set(img.id.toString(), img));
@@ -371,14 +374,9 @@ class XPhotoFrameManager extends HTMLElement {
     console.log('Gallery images order:', galleryImages.map(img => img.id));
     
     galleryImages.forEach((image, index) => {
-      console.log(`Creating card ${index} for image ${image.id}`);
       const card = document.createElement('image-card');
       card.image = image;
       card.isCover = gallery.coverImageId === image.id.toString();
-      
-      // Add a temporary visual indicator to verify DOM changes
-      card.style.border = `3px solid ${index % 2 === 0 ? 'red' : 'blue'}`;
-      card.setAttribute('data-position', index);
       
       gridContainer.appendChild(card);
     });
