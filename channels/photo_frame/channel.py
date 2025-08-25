@@ -2,11 +2,47 @@ import os
 import json
 import asyncio
 import re
+"""
+Photo Frame Channel for Mimir Platform v2.4+ with Gallery Support
+
+REFACTORING PROGRESS:
+✅ MODELS: Extracted to models/ directory
+  - models/gallery.py: Gallery data models and operations
+  - models/image.py: Image metadata and upload handling  
+  - models/settings.py: Settings validation and management
+
+🔄 TODO: Extract remaining components
+  - services/: Business logic (gallery, image, rendering services)
+  - routes/: API endpoint handlers
+  - core/: Configuration and dependencies
+
+This channel provides digital photo frame functionality with intelligent image management and galleries.
+"""
+
 from datetime import datetime, timezone
 from typing import Tuple, Dict, Any, Optional, List
 from pathlib import Path
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
+
+# New model imports
+from .models import (
+    Gallery, GalleryCreate, GalleryUpdate,
+    Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
+    ChannelSettings, GallerySettings, SettingsManager
+)
+
+# New service imports  
+from .services import (
+    GalleryService, ImageService, RenderingService, StorageService
+)
+
+# New route imports
+from .routes import (
+    create_images_router, create_galleries_router, create_settings_router,
+    create_assets_router, create_legacy_assets_router, create_admin_router,
+    create_subchannel_settings_router
+)
 
 # Handle imports for both standalone and platform usage
 try:
@@ -108,6 +144,25 @@ class PhotoFrameChannel(BaseChannel):
         self.last_update = None
         self.last_error = None
         self.current_image_id = None
+        
+        # NEW: Initialize services for improved architecture
+        self.settings_manager = SettingsManager()  # Add missing settings manager
+        self.gallery_service = GalleryService(self.galleries_file)
+        self.image_service = ImageService(
+            self.channel_dir / "assets" / "uploads", 
+            self.image_processor
+        )
+        self.rendering_service = RenderingService(
+            self.image_processor,
+            self.gallery_service,
+            self.image_service,
+            self.channel_dir / "current.jpg",
+            self.channel_dir / "placeholder.jpg"
+        )
+        self.storage_service = StorageService(
+            self.channel_dir / "assets" / "uploads",
+            self.galleries_file
+        )
         
         # Ensure directories exist
         self._ensure_directories()
@@ -353,6 +408,34 @@ class PhotoFrameChannel(BaseChannel):
     def get_router(self) -> APIRouter:
         """Return FastAPI router for channel-specific endpoints"""
         router = APIRouter()
+        
+        # NEW ROUTES ARCHITECTURE - ACTIVATED!
+        # Include all route modules with dependency injection
+        router.include_router(create_images_router(
+            self.image_service, self.gallery_service, self.storage_service, 
+            self.metadata, self.image_processor
+        ))
+        router.include_router(create_galleries_router(
+            self.gallery_service, self.image_service, self.storage_service
+        ))
+        router.include_router(create_settings_router(
+            self.gallery_service, self.storage_service, self.settings_manager, 
+            self.db, self._config
+        ))
+        router.include_router(create_subchannel_settings_router(
+            self.gallery_service, self.settings_manager
+        ))
+        router.include_router(create_assets_router(self.storage_service, self.channel_dir))
+        router.include_router(create_legacy_assets_router(self.storage_service, self.channel_dir))
+        router.include_router(create_admin_router(
+            self.image_service, self.gallery_service, self.storage_service,
+            self.rendering_service, self.settings_manager, self.metadata
+        ))
+        
+        return router
+        
+        # OLD IMPLEMENTATION - DISABLED (kept for reference)
+        # TODO: Remove after confirming new routes work correctly
         
         @router.get("/images")
         async def list_images():
