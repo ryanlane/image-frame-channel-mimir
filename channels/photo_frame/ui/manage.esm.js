@@ -470,7 +470,17 @@ class XPhotoFrameManager extends HTMLElement {
         
         if (uploadResult.results && Array.isArray(uploadResult.results)) {
           const successfulUploads = uploadResult.results.filter(r => r.success);
+          const failedUploads = uploadResult.results.filter(r => !r.success);
           console.log('Successful uploads:', successfulUploads.length);
+          console.log('Failed uploads:', failedUploads.length);
+          
+          // Debug: show error details for failed uploads
+          if (failedUploads.length > 0) {
+            console.log('Failed upload details:');
+            failedUploads.forEach((upload, index) => {
+              console.log(`  ${index + 1}. File: ${upload.filename}, Error: ${upload.error}`);
+            });
+          }
           
           if (this.state.currentGalleryId && successfulUploads.length > 0) {
             const imageIds = successfulUploads.map(img => img.image_id.toString());

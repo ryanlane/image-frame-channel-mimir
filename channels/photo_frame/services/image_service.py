@@ -55,36 +55,49 @@ class ImageService:
         Returns:
             ImageBatchUploadResult with individual upload results
         """
+        print(f"DEBUG: Starting batch upload for {len(files)} files")
         batch_result = ImageBatchUploadResult()
         
         for file in files:
+            print(f"DEBUG: Processing file: {getattr(file, 'filename', 'unknown')}")
             result = self._upload_single_file(file)
             batch_result.add_result(result)
+            print(f"DEBUG: Upload result: success={result.success}, error={result.error}")
         
+        print(f"DEBUG: Batch upload complete: {batch_result.successful_uploads} successful, {batch_result.failed_uploads} failed")
         return batch_result
     
     def _upload_single_file(self, file) -> ImageUploadResult:
         """Upload a single image file"""
         try:
+            print(f"DEBUG: Starting upload for file: {file.filename}")
+            
             # Validate file type
             if not self._is_valid_image_file(file.filename):
+                print(f"DEBUG: File validation failed for: {file.filename}")
                 return ImageUploadResult(
                     success=False,
                     filename=file.filename,
                     error="Invalid file type. Only image files are allowed."
                 )
             
+            print(f"DEBUG: File validation passed for: {file.filename}")
+            print(f"DEBUG: File validation passed for: {file.filename}")
+            
             # Generate unique filename
             filename = self._generate_unique_filename(file.filename)
             file_path = self.uploads_dir / filename
+            print(f"DEBUG: Generated filename: {filename}, path: {file_path}")
             
             # Save file
             with open(file_path, "wb") as f:
                 content = file.file.read()
                 f.write(content)
+            print(f"DEBUG: File saved successfully: {file_path}")
             
             # Extract metadata and save to database
             image_id = self._process_uploaded_image(file_path, filename)
+            print(f"DEBUG: Image processed successfully with ID: {image_id}")
             
             return ImageUploadResult(
                 success=True,
@@ -93,6 +106,7 @@ class ImageService:
             )
             
         except Exception as e:
+            print(f"DEBUG: Upload failed with exception: {str(e)}")
             return ImageUploadResult(
                 success=False,
                 filename=getattr(file, 'filename', 'unknown'),
@@ -125,10 +139,14 @@ class ImageService:
     def _process_uploaded_image(self, file_path: Path, filename: str) -> str:
         """Process uploaded image and extract metadata"""
         try:
+            print(f"DEBUG: Processing image: {file_path}")
+            
             # Get image info
             if self.image_processor:
+                print(f"DEBUG: Using image processor for metadata")
                 image_info = self.image_processor.get_image_info(file_path)
             else:
+                print(f"DEBUG: Using fallback metadata extraction")
                 # Basic fallback
                 image_info = {
                     "width": 0,
@@ -136,9 +154,14 @@ class ImageService:
                     "format": Path(filename).suffix.lower().lstrip('.').upper()
                 }
             
+            print(f"DEBUG: Image info: {image_info}")
+            
             # Generate thumbnail
             if self.image_processor:
+                print(f"DEBUG: Generating thumbnail")
                 self.image_processor.generate_thumbnail(file_path)
+            else:
+                print(f"DEBUG: No image processor for thumbnail generation")
             
             # Create metadata record
             file_stats = file_path.stat()
@@ -162,11 +185,15 @@ class ImageService:
                 "description": ""
             }
             
+            print(f"DEBUG: Created image data: {image_data}")
+            
             # Save to metadata
             image_id = self.metadata.add_image(image_data)
+            print(f"DEBUG: Saved to metadata with ID: {image_id}")
             return str(image_id)
             
         except Exception as e:
+            print(f"DEBUG: Error processing image: {str(e)}")
             # Clean up file on error
             if file_path.exists():
                 file_path.unlink()
