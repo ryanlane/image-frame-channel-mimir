@@ -140,34 +140,39 @@ class SubchannelSettingsRoutes:
         async def get_subchannel_settings(subchannel_id: str):
             """Get settings for a specific gallery (subchannel)"""
             try:
-                gallery = await self.gallery_service.get_gallery(subchannel_id)
-                if not gallery:
-                    raise HTTPException(status_code=404, detail="Gallery not found")
-                
-                # Return gallery-specific settings
-                settings = gallery.settings or {}
+                # Note: gallery_service methods are synchronous, no await needed
+                gallery_settings = self.gallery_service.get_gallery_settings(subchannel_id)
                 
                 return JSONResponse({
-                    "gallery_id": gallery.id,
-                    "gallery_name": gallery.name,
                     "slideshow_enabled": {
                         "type": "boolean",
-                        "value": settings.get("slideshow_enabled", True)
+                        "value": gallery_settings.get("slideshow_enabled", True)
                     },
                     "order_mode": {
                         "type": "string",
-                        "value": settings.get("order_mode", "added")
+                        "value": gallery_settings.get("order_mode", "added")
+                    },
+                    "crop_mode": {
+                        "type": "string", 
+                        "value": gallery_settings.get("crop_mode", "smart_crop")
                     },
                     "transition_effect": {
                         "type": "string",
-                        "value": settings.get("transition_effect", "fade")
+                        "value": gallery_settings.get("transition_effect", "fade")
                     },
-                    "update_interval_minutes": {
+                    "update_interval_value": {
                         "type": "integer",
-                        "value": settings.get("update_interval_minutes", 30)
+                        "value": gallery_settings.get("update_interval_value", 30)
+                    },
+                    "update_interval_unit": {
+                        "type": "string",
+                        "value": gallery_settings.get("update_interval_unit", "minutes")
                     }
                 })
                 
+            except ValueError as e:
+                # Gallery not found
+                raise HTTPException(status_code=404, detail=str(e))
             except HTTPException:
                 raise
             except Exception as e:
@@ -179,23 +184,18 @@ class SubchannelSettingsRoutes:
             try:
                 settings_data = await request.json()
                 
-                # Get the gallery
-                gallery = await self.gallery_service.get_gallery(subchannel_id)
-                if not gallery:
-                    raise HTTPException(status_code=404, detail="Gallery not found")
+                # Use the gallery service method to update settings
+                # Note: this method is synchronous, no await needed
+                success = self.gallery_service.update_gallery_settings(subchannel_id, settings_data)
                 
-                # Validate gallery settings
-                try:
-                    validated_settings = self.settings_manager.validate_gallery_settings(settings_data)
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
+                if success:
+                    return JSONResponse({"success": True})
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to update gallery settings")
                 
-                # Update gallery with new settings
-                gallery.settings = validated_settings.dict()
-                await self.gallery_service.update_gallery(subchannel_id, gallery)
-                
-                return JSONResponse({"success": True})
-                
+            except ValueError as e:
+                # Gallery not found or validation errors
+                raise HTTPException(status_code=400, detail=str(e))
             except HTTPException:
                 raise
             except Exception as e:

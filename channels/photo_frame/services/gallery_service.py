@@ -257,6 +257,9 @@ class GalleryService:
             raise ValueError(f"Invalid settings: {validation_errors}")
         
         # Update the gallery's display settings
+        # Ensure display_settings is not None before updating
+        if gallery.display_settings is None:
+            gallery.display_settings = {}
         gallery.display_settings.update(settings)
         gallery.modified = datetime.now(timezone.utc).isoformat()
         
