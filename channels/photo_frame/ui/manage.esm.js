@@ -18,6 +18,12 @@ class XPhotoFrameManager extends HTMLElement {
     };
 
     this.apiBaseUrl = this.getApiBaseUrl();
+    
+    // Bind event handlers once to prevent duplicate listeners
+    this.boundHandleDeleteImage = this.handleDeleteImage.bind(this);
+    this.boundHandleSetCoverImage = this.handleSetCoverImage.bind(this);
+    this.boundHandleImageReorder = this.handleImageReorder.bind(this);
+    this.galleryDetailListenersAttached = false;
   }
 
   getApiBaseUrl() {
@@ -381,10 +387,17 @@ class XPhotoFrameManager extends HTMLElement {
   attachGalleryDetailEventListeners() {
     // Attach event listeners for gallery detail view after components are populated
     console.log('Attaching gallery detail event listeners');
-    this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
-    this.shadowRoot.addEventListener('set-cover-image', this.handleSetCoverImage.bind(this));
-    this.shadowRoot.addEventListener('image-reorder', this.handleImageReorder.bind(this));
-    console.log('Gallery detail event listeners attached');
+    
+    // Only attach if not already attached to prevent duplicates
+    if (!this.galleryDetailListenersAttached) {
+      this.shadowRoot.addEventListener('delete-image', this.boundHandleDeleteImage);
+      this.shadowRoot.addEventListener('set-cover-image', this.boundHandleSetCoverImage);
+      this.shadowRoot.addEventListener('image-reorder', this.boundHandleImageReorder);
+      this.galleryDetailListenersAttached = true;
+      console.log('Gallery detail event listeners attached');
+    } else {
+      console.log('Gallery detail event listeners already attached, skipping');
+    }
   }
 
   attachUploadEventListeners() {
@@ -516,6 +529,7 @@ class XPhotoFrameManager extends HTMLElement {
   handleBackToGalleries() {
     this.state.view = 'gallery-overview';
     this.state.currentGalleryId = null;
+    this.galleryDetailListenersAttached = false; // Reset the flag
     this.render();
     this.attachEventListeners();
   }
