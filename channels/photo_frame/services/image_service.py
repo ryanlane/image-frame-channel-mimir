@@ -4,6 +4,7 @@ Image Service - Business logic for image operations
 
 import hashlib
 import os
+import random
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
@@ -269,6 +270,37 @@ class ImageService:
         thumbnail_filename = f"{name_stem}.thumb.jpg"
         return self.uploads_dir / thumbnail_filename
     
+    def get_next_image(
+        self, 
+        settings: Dict[str, Any], 
+        image_list: Optional[List[Dict[str, Any]]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Select next image based on slideshow settings.
+        
+        Args:
+            settings: Display settings dictionary
+            image_list: Optional list of images to select from. If None, uses all enabled images.
+        """
+        order_mode = settings.get("order_mode", "added")
+        
+        if image_list is None:
+            enabled_images = self.get_enabled_images()
+        else:
+            enabled_images = [img for img in image_list if img.get("enabled", True)]
+        
+        if not enabled_images:
+            return None
+        
+        if order_mode == "random":
+            return random.choice(enabled_images)
+        elif order_mode == "custom":
+            # Sort by sort_order, then by times_shown (least shown first)
+            return sorted(enabled_images, key=lambda x: (x.get("sort_order", 0), x.get("times_shown", 0)))[0]
+        else:  # "added"
+            # Sort by times_shown (least shown first), then by creation date
+            return sorted(enabled_images, key=lambda x: (x.get("times_shown", 0), x.get("created_at", "")))[0]
+
     def file_exists(self, filename: str) -> bool:
         """Check if image file exists"""
         return self.get_image_file_path(filename).exists()

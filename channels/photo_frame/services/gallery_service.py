@@ -278,7 +278,8 @@ class GalleryService:
         self, 
         gallery_id: str, 
         all_images: List[Dict[str, Any]],
-        settings: Dict[str, Any] = None
+        settings: Dict[str, Any] = None,
+        image_service: Optional["ImageService"] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Get next image from a specific gallery based on settings
@@ -287,39 +288,32 @@ class GalleryService:
             gallery_id: ID of the gallery
             all_images: List of all available images
             settings: Display settings (uses gallery settings if not provided)
+            image_service: Instance of ImageService to delegate image selection logic
         """
         gallery = self.get_gallery(gallery_id)
         if not gallery or not gallery.content_ids:
             return None
-        
+
         # Use gallery settings if not provided
         if not settings:
             settings = self.get_gallery_settings(gallery_id)
-        
+
         # Get images in this gallery
         image_lookup = {str(img["id"]): img for img in all_images}
-        gallery_images = []
-        
-        for content_id in gallery.content_ids:
-            image = image_lookup.get(content_id)
-            if image and image.get("enabled", True):
-                gallery_images.append(image)
-        
+        gallery_images = [
+            image_lookup[content_id]
+            for content_id in gallery.content_ids
+            if content_id in image_lookup and image_lookup[content_id].get("enabled", True)
+        ]
+
         if not gallery_images:
             return None
-        
-        # Select image based on order mode
-        order_mode = settings.get("order_mode", "added")
-        
-        if order_mode == "random":
-            import random
-            return random.choice(gallery_images)
-        elif order_mode == "custom":
-            # Return least shown image with custom order
-            return sorted(gallery_images, key=lambda x: (x.get("sort_order", 0), x.get("times_shown", 0)))[0]
-        else:  # "added" - use gallery order
-            # Return least shown image in gallery order
-            return sorted(gallery_images, key=lambda x: x.get("times_shown", 0))[0]
+
+        # Delegate image selection to ImageService
+        if image_service:
+            return image_service.get_next_image(settings, gallery_images)
+
+        return None
     
     def remove_image_from_all_galleries(self, image_id: str) -> None:
         """Remove an image from all galleries when the image is deleted"""

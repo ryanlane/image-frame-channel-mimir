@@ -187,7 +187,8 @@ class PhotoFrameChannel(BaseChannel):
         self.settings_manager = SettingsManager()  # Add missing settings manager
         self.gallery_service = GalleryService(self.channel_dir)
         self.image_service = ImageService(
-            self.channel_dir / "assets" / "uploads", 
+            self.channel_dir, 
+            self.metadata,
             self.image_processor
         )
         self.rendering_service = RenderingService(self.channel_dir)
@@ -261,14 +262,14 @@ class PhotoFrameChannel(BaseChannel):
 
             # Get next image based on gallery selection or all images
             if subchannel_id:
-                image_record = await self.gallery_service.get_next_image_from_gallery(
-                    subchannel_id, all_images, current_settings
+                image_record = self.gallery_service.get_next_image_from_gallery(
+                    subchannel_id, all_images, current_settings, self.image_service
                 )
                 if not image_record:
                     print(f"⚠️ Gallery '{subchannel_id}' not found or has no images, falling back to all images")
-                    image_record = await self._get_next_image(current_settings, all_images)
+                    image_record = self.image_service.get_next_image(current_settings)
             else:
-                image_record = await self._get_next_image(current_settings, all_images)
+                image_record = self.image_service.get_next_image(current_settings)
             
             if not image_record:
                 # No images available, use placeholder
@@ -548,39 +549,7 @@ class PhotoFrameChannel(BaseChannel):
             "errors": errors
         }
     
-    async def _get_next_image(self, settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Select next image based on slideshow settings"""
-        if not settings.get("slideshow_enabled", True):
-            # If slideshow disabled, return current image
-            if self.current_image_id:
-                return self.metadata.get_image_by_id(str(self.current_image_id))
-        
-        order_mode = settings.get("order_mode", "added")
-        all_images = self.metadata.get_all_images()
-        enabled_images = [img for img in all_images if img.get("enabled", True)]
-        
-        if not enabled_images:
-            return None
-        
-        if order_mode == "random":
-            import random
-            return random.choice(enabled_images)
-        elif order_mode == "custom":
-            # Sort by custom sort_order, then by least recently shown
-            return self._get_next_by_custom_order(enabled_images)
-        else:  # "added"
-            # Sort by creation date, prefer never shown
-            return self._get_next_by_date_added(enabled_images)
-    
-    def _get_next_by_custom_order(self, images):
-        """Get next image by custom order"""
-        # Sort by sort_order, then by times_shown (least shown first)
-        return sorted(images, key=lambda x: (x.get("sort_order", 0), x.get("times_shown", 0)))[0]
-    
-    def _get_next_by_date_added(self, images):
-        """Get next image by date added"""
-        # Sort by times_shown (least shown first), then by creation date
-        return sorted(images, key=lambda x: (x.get("times_shown", 0), x.get("created_at", "")))[0]
+
     
     async def _process_placeholder_for_display(
         self, 
