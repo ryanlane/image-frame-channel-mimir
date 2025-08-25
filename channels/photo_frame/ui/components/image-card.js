@@ -2,10 +2,15 @@ class ImageCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this.isDragging = false;
   }
 
   connectedCallback() {
     this.render();
+    this.attachEventListeners();
+  }
+
+  attachEventListeners() {
     this.shadowRoot.querySelector('.delete-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.dispatchEvent(new CustomEvent('delete-image', {
@@ -22,6 +27,62 @@ class ImageCard extends HTMLElement {
         composed: true,
         detail: { imageId: this.image.id }
       }));
+    });
+
+    // Drag and drop event listeners
+    const imageCard = this.shadowRoot.querySelector('.image-card');
+    
+    imageCard.addEventListener('dragstart', (e) => {
+      this.isDragging = true;
+      imageCard.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', this.image.id.toString());
+      e.dataTransfer.effectAllowed = 'move';
+      
+      this.dispatchEvent(new CustomEvent('drag-start', {
+        bubbles: true,
+        composed: true,
+        detail: { imageId: this.image.id }
+      }));
+    });
+
+    imageCard.addEventListener('dragend', (e) => {
+      this.isDragging = false;
+      imageCard.classList.remove('dragging');
+      
+      this.dispatchEvent(new CustomEvent('drag-end', {
+        bubbles: true,
+        composed: true,
+        detail: { imageId: this.image.id }
+      }));
+    });
+
+    imageCard.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (!this.isDragging) {
+        imageCard.classList.add('drag-over');
+      }
+    });
+
+    imageCard.addEventListener('dragleave', (e) => {
+      imageCard.classList.remove('drag-over');
+    });
+
+    imageCard.addEventListener('drop', (e) => {
+      e.preventDefault();
+      imageCard.classList.remove('drag-over');
+      
+      const draggedImageId = e.dataTransfer.getData('text/plain');
+      if (draggedImageId && draggedImageId !== this.image.id.toString()) {
+        this.dispatchEvent(new CustomEvent('image-reorder', {
+          bubbles: true,
+          composed: true,
+          detail: { 
+            draggedImageId: draggedImageId,
+            targetImageId: this.image.id.toString()
+          }
+        }));
+      }
     });
   }
 
@@ -66,10 +127,24 @@ class ImageCard extends HTMLElement {
           overflow: hidden;
           box-shadow: 0 1px 4px rgba(0,0,0,0.06);
           transition: transform 0.2s, box-shadow 0.2s;
+          cursor: grab;
+          background: white;
         }
         .image-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .image-card.dragging {
+          opacity: 0.5;
+          transform: rotate(5deg);
+          cursor: grabbing;
+          z-index: 1000;
+        }
+        .image-card.drag-over {
+          border: 2px dashed #007bff;
+          background: #f0f8ff;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,123,255,0.3);
         }
         .image-thumbnail {
           width: 100%;
@@ -83,7 +158,7 @@ class ImageCard extends HTMLElement {
         }
         .image-info {
           padding: 8px;
-          background: white;
+          background: inherit;
         }
         .image-filename {
           font-size: 0.8rem;
@@ -131,8 +206,24 @@ class ImageCard extends HTMLElement {
           font-size: 0.7rem;
           font-weight: 600;
         }
+        .drag-handle {
+          position: absolute;
+          bottom: 8px;
+          right: 8px;
+          color: #6c757d;
+          font-size: 14px;
+          opacity: 0;
+          transition: opacity 0.2s;
+          cursor: grab;
+          background: rgba(255,255,255,0.9);
+          border-radius: 4px;
+          padding: 4px;
+        }
+        .image-card:hover .drag-handle {
+          opacity: 1;
+        }
       </style>
-      <div class="image-card">
+      <div class="image-card" draggable="true">
         <div class="image-thumbnail">
           <img src="${thumbnailUrl}" alt="${this.image.filename}" />
         </div>
@@ -143,9 +234,15 @@ class ImageCard extends HTMLElement {
           <button class="action-btn cover-btn" title="Set as gallery cover">⭐</button>
           <button class="action-btn delete-btn" title="Delete image">🗑️</button>
         </div>
+        <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
         ${this.isCover ? `<div class="cover-indicator">Cover</div>` : ''}
       </div>
     `;
+    
+    // Re-attach event listeners after render
+    if (this.isConnected) {
+      this.attachEventListeners();
+    }
   }
 
   escapeHtml(text) {

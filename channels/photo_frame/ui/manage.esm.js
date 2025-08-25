@@ -280,6 +280,7 @@ class XPhotoFrameManager extends HTMLElement {
           <button class="btn-secondary" id="back-to-galleries">← Back to Galleries</button>
           <h1 style="margin-top: 16px;">${gallery.name}</h1>
           <p style="color: #6c757d;">${gallery.description || ''}</p>
+          ${galleryImages.length > 1 ? '<p style="color: #007bff; font-size: 0.9rem; margin-top: 8px;">💡 Drag and drop images to reorder them</p>' : ''}
         </div>
         <button class="btn-primary" id="gallery-settings-btn">Gallery Settings</button>
       </div>
@@ -375,6 +376,7 @@ class XPhotoFrameManager extends HTMLElement {
       this.attachUploadEventListeners();
       this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
       this.shadowRoot.addEventListener('set-cover-image', this.handleSetCoverImage.bind(this));
+      this.shadowRoot.addEventListener('image-reorder', this.handleImageReorder.bind(this));
     }
   }
 
@@ -864,6 +866,45 @@ class XPhotoFrameManager extends HTMLElement {
       }
     } catch (error) {
       console.error('Error setting cover image:', error);
+    }
+  }
+
+  async handleImageReorder(e) {
+    const { draggedImageId, targetImageId } = e.detail;
+    const galleryId = this.state.currentGalleryId;
+    
+    if (!galleryId) {
+      console.error('No gallery selected for reordering');
+      return;
+    }
+
+    try {
+      console.log('Reordering images:', { draggedImageId, targetImageId, galleryId });
+      
+      const response = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${galleryId}/images/reorder`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          dragged_id: draggedImageId,
+          target_id: targetImageId
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Reorder successful:', result);
+        
+        // Refresh the data to show the new order
+        await this.refreshData();
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to reorder images:', response.status, errorText);
+        alert(`Failed to reorder images: ${response.status} ${errorText}`);
+      }
+    } catch (error) {
+      console.error('Error reordering images:', error);
+      alert(`Error reordering images: ${error.message}`);
     }
   }
 }
