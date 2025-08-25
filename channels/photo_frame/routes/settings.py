@@ -206,15 +206,19 @@ class SubchannelSettingsRoutes:
             """Reorder images within a specific gallery"""
             try:
                 data = await request.json()
-                image_ids = data.get("image_ids", [])
+                dragged_id = data.get("dragged_id")
+                target_id = data.get("target_id")
                 
-                if not image_ids:
-                    raise HTTPException(status_code=400, detail="image_ids array required")
+                if not dragged_id or not target_id:
+                    raise HTTPException(status_code=400, detail="Both dragged_id and target_id required")
                 
                 # Reorder images in the gallery
-                await self.gallery_service.reorder_gallery_images(subchannel_id, image_ids)
+                success = self.gallery_service.reorder_gallery_images(subchannel_id, dragged_id, target_id)
                 
-                return JSONResponse({"success": True})
+                if success:
+                    return JSONResponse({"success": True})
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to reorder images")
                 
             except HTTPException:
                 raise
