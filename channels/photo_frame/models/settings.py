@@ -9,7 +9,7 @@ class ChannelSettings:
     """Channel-level settings for photo frame"""
     
     VALID_ORDER_MODES = ["added", "random", "custom"]
-    VALID_CROP_MODES = ["smart_crop", "letterbox", "stretch"]
+    VALID_CROP_MODES = ["smart_crop", "fit", "fill"]
     VALID_TRANSITIONS = ["fade", "slide", "none"]
     VALID_UNITS = ["days", "hours", "minutes", "seconds"]
 
