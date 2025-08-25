@@ -42,7 +42,7 @@ class GalleryRoutes:
         async def list_galleries():
             """List all galleries"""
             try:
-                galleries = await self.gallery_service.list_galleries()
+                galleries = self.gallery_service.get_all_galleries()
                 
                 return JSONResponse([
                     {
