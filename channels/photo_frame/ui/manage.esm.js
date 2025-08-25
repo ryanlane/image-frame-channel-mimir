@@ -355,7 +355,14 @@ class XPhotoFrameManager extends HTMLElement {
       return;
     }
 
-    const galleryImages = this.state.allImages.filter(img => gallery.contentIds.includes(img.id.toString()));
+    // Create a map for quick image lookup
+    const imageMap = new Map();
+    this.state.allImages.forEach(img => imageMap.set(img.id.toString(), img));
+    
+    // Build gallery images array in the order specified by contentIds
+    const galleryImages = gallery.contentIds
+      .map(id => imageMap.get(id))
+      .filter(img => img !== undefined); // Remove any missing images
     
     console.log('populateImageCards debug:');
     console.log('Gallery contentIds:', gallery.contentIds);
