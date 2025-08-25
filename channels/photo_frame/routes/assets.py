@@ -13,7 +13,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 # Import dependencies that will be injected
-from ..services import StorageService
+# Use absolute imports to avoid relative import issues
+try:
+    from services import StorageService
+except ImportError:
+    # Fallback for when running from channel directory
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from services import StorageService
 
 
 class AssetRoutes:

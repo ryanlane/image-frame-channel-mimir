@@ -12,8 +12,17 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 # Import dependencies that will be injected
-from ..services import GalleryService, StorageService
-from ..models import ChannelSettings, GallerySettings, SettingsManager
+# Use absolute imports to avoid relative import issues
+try:
+    from services import GalleryService, StorageService
+    from models import ChannelSettings, GallerySettings, SettingsManager
+except ImportError:
+    # Fallback for when running from channel directory
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from services import GalleryService, StorageService
+    from models import ChannelSettings, GallerySettings, SettingsManager
 
 
 class SettingsRoutes:

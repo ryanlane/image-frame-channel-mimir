@@ -12,9 +12,18 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-# Import dependencies that will be injected
-from ..services import ImageService, GalleryService, StorageService
-from ..models import ImageUploadResult
+# Import dependencies that will be injected  
+# Use absolute imports to avoid relative import issues
+try:
+    from services import ImageService, GalleryService, StorageService
+    from models import ImageUploadResult
+except ImportError:
+    # Fallback for when running from channel directory
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from services import ImageService, GalleryService, StorageService
+    from models import ImageUploadResult
 
 
 class ImageRoutes:

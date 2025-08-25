@@ -1,7 +1,10 @@
 import os
+import sys
 import json
 import asyncio
 import re
+import random
+import shutil
 """
 Photo Frame Channel for Mimir Platform v2.4+ with Gallery Support
 
