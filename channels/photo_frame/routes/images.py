@@ -55,7 +55,7 @@ class ImageRoutes:
             """Handle image uploads with batch processing"""
             try:
                 # Use the new image service for uploads
-                result = await self.image_service.upload_files(files)
+                result = self.image_service.upload_files(files)
                 
                 return JSONResponse({
                     "success": True,
@@ -135,11 +135,11 @@ class ImageRoutes:
             """Delete image from collection and all galleries"""
             try:
                 # Remove from all galleries first
-                galleries = await self.gallery_service.list_galleries()
+                galleries = self.gallery_service.get_all_galleries()
                 for gallery in galleries:
                     if image_id in gallery.content_ids:
                         gallery.content_ids.remove(image_id)
-                        await self.gallery_service.update_gallery(gallery.id, gallery)
+                        self.gallery_service.update_gallery(gallery.id, gallery)
                 
                 # Delete the image files and metadata
                 success = self.metadata.delete_image(image_id)
