@@ -873,13 +873,17 @@ class XPhotoFrameManager extends HTMLElement {
       });
 
       if (galleryRes.ok && settingsRes.ok) {
+        // Close modal first before refreshing/rendering
+        if (modal && modal.parentNode === this.shadowRoot) {
+          this.shadowRoot.removeChild(modal);
+        }
+        if (style && style.parentNode === this.shadowRoot) {
+          this.shadowRoot.removeChild(style);
+        }
+        
         await this.refreshData();
         this.render();
         this.attachEventListeners();
-        
-        // Close modal
-        this.shadowRoot.removeChild(modal);
-        this.shadowRoot.removeChild(style);
       } else {
         if (!galleryRes.ok) {
           console.error('Failed to update gallery:', galleryRes.status, galleryRes.statusText);
@@ -892,11 +896,27 @@ class XPhotoFrameManager extends HTMLElement {
           console.error('Settings error response:', settingsError);
         }
         alert('Failed to save some settings');
+        
+        // Close modal even on error
+        if (modal && modal.parentNode === this.shadowRoot) {
+          this.shadowRoot.removeChild(modal);
+        }
+        if (style && style.parentNode === this.shadowRoot) {
+          this.shadowRoot.removeChild(style);
+        }
       }
     } catch (error) {
       console.error('Error saving settings:', error);
       console.error('Error details:', error.message, error.stack);
       alert('Error saving settings');
+      
+      // Close modal even on exception
+      if (modal && modal.parentNode === this.shadowRoot) {
+        this.shadowRoot.removeChild(modal);
+      }
+      if (style && style.parentNode === this.shadowRoot) {
+        this.shadowRoot.removeChild(style);
+      }
     }
   }
 
