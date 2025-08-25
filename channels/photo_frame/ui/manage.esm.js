@@ -24,6 +24,7 @@ class XPhotoFrameManager extends HTMLElement {
     this.boundHandleSetCoverImage = this.handleSetCoverImage.bind(this);
     this.boundHandleImageReorder = this.handleImageReorder.bind(this);
     this.galleryDetailListenersAttached = false;
+    this.processingReorder = false;
   }
 
   getApiBaseUrl() {
@@ -876,8 +877,19 @@ class XPhotoFrameManager extends HTMLElement {
 
   async handleImageReorder(e) {
     console.log('handleImageReorder called with event:', e);
+    console.log('Event target:', e.target);
+    console.log('Event currentTarget:', e.currentTarget);
+    
     const { draggedImageId, targetImageId } = e.detail;
     const galleryId = this.state.currentGalleryId;
+    
+    // Prevent duplicate processing of the same event
+    if (this.processingReorder) {
+      console.log('Already processing a reorder, ignoring duplicate event');
+      return;
+    }
+    
+    this.processingReorder = true;
     
     try {
       console.log('Reordering images:', { draggedImageId, targetImageId, galleryId });
@@ -914,6 +926,8 @@ class XPhotoFrameManager extends HTMLElement {
       }
     } catch (error) {
       console.error('Error reordering images:', error);
+    } finally {
+      this.processingReorder = false;
     }
   }
 
