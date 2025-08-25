@@ -59,14 +59,14 @@ class ImageRoutes:
                 
                 return JSONResponse({
                     "success": True,
-                    "uploaded_count": result.successful_count,
-                    "failed_count": result.failed_count,
+                    "uploaded_count": result.successful_uploads,
+                    "failed_count": result.failed_uploads,
                     "results": [
                         {
                             "filename": r.filename,
                             "success": r.success,
                             "image_id": r.image_id,
-                            "error": r.error_message
+                            "error": r.error
                         }
                         for r in result.results
                     ]
