@@ -73,7 +73,10 @@ class ImageCard extends HTMLElement {
       imageCard.classList.remove('drag-over');
       
       const draggedImageId = e.dataTransfer.getData('text/plain');
+      console.log('Drop event triggered:', { draggedImageId, targetImageId: this.image.id.toString() });
+      
       if (draggedImageId && draggedImageId !== this.image.id.toString()) {
+        console.log('Dispatching image-reorder event');
         this.dispatchEvent(new CustomEvent('image-reorder', {
           bubbles: true,
           composed: true,
@@ -82,6 +85,8 @@ class ImageCard extends HTMLElement {
             targetImageId: this.image.id.toString()
           }
         }));
+      } else {
+        console.log('Drop ignored - same image or invalid draggedImageId');
       }
     });
   }

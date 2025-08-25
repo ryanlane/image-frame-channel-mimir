@@ -380,9 +380,11 @@ class XPhotoFrameManager extends HTMLElement {
 
   attachGalleryDetailEventListeners() {
     // Attach event listeners for gallery detail view after components are populated
+    console.log('Attaching gallery detail event listeners');
     this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
     this.shadowRoot.addEventListener('set-cover-image', this.handleSetCoverImage.bind(this));
     this.shadowRoot.addEventListener('image-reorder', this.handleImageReorder.bind(this));
+    console.log('Gallery detail event listeners attached');
   }
 
   attachUploadEventListeners() {
@@ -855,6 +857,7 @@ class XPhotoFrameManager extends HTMLElement {
   }
 
   async handleImageReorder(e) {
+    console.log('handleImageReorder called with event:', e);
     const { draggedImageId, targetImageId } = e.detail;
     const galleryId = this.state.currentGalleryId;
     
