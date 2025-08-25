@@ -178,6 +178,34 @@ class SubchannelSettingsRoutes:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get gallery settings: {str(e)}")
 
+        @router.put("/{subchannel_id}")
+        async def update_subchannel(subchannel_id: str, request: Request):
+            """Update gallery metadata (name and description)"""
+            try:
+                data = await request.json()
+                
+                # Import GalleryUpdate here to avoid circular import issues
+                from models.gallery import GalleryUpdate
+                
+                # Create update object with only the fields provided
+                update_data = GalleryUpdate(
+                    name=data.get("name"),
+                    description=data.get("description")
+                )
+                
+                # Update the gallery
+                updated_gallery = self.gallery_service.update_gallery(subchannel_id, update_data)
+                
+                return JSONResponse({"success": True})
+                
+            except ValueError as e:
+                # Gallery not found
+                raise HTTPException(status_code=404, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to update gallery: {str(e)}")
+
         @router.put("/{subchannel_id}/settings")
         async def update_subchannel_settings(subchannel_id: str, request: Request):
             """Update settings for a specific gallery (subchannel)"""
