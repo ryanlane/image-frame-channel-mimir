@@ -304,6 +304,8 @@ class XPhotoFrameManager extends HTMLElement {
       this.populateGalleryCards();
     } else if (this.state.view === 'gallery-detail') {
       this.populateImageCards();
+      // Attach gallery detail event listeners after image cards are created
+      this.attachGalleryDetailEventListeners();
     }
   }
 
@@ -373,10 +375,14 @@ class XPhotoFrameManager extends HTMLElement {
 
     if (this.state.view === 'gallery-detail') {
       this.attachUploadEventListeners();
-      this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
-      this.shadowRoot.addEventListener('set-cover-image', this.handleSetCoverImage.bind(this));
-      this.shadowRoot.addEventListener('image-reorder', this.handleImageReorder.bind(this));
     }
+  }
+
+  attachGalleryDetailEventListeners() {
+    // Attach event listeners for gallery detail view after components are populated
+    this.shadowRoot.addEventListener('delete-image', this.handleDeleteImage.bind(this));
+    this.shadowRoot.addEventListener('set-cover-image', this.handleSetCoverImage.bind(this));
+    this.shadowRoot.addEventListener('image-reorder', this.handleImageReorder.bind(this));
   }
 
   attachUploadEventListeners() {
