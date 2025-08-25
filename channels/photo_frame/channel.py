@@ -38,29 +38,57 @@ from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 
 # New model imports
-from .models import (
-    Gallery, GalleryCreate, GalleryUpdate,
-    Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
-    ChannelSettings, GallerySettings, SettingsManager
-)
+try:
+    from models import (
+        Gallery, GalleryCreate, GalleryUpdate,
+        Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
+        ChannelSettings, GallerySettings, SettingsManager
+    )
+except ImportError:
+    # Fallback for when running from channel directory
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from models import (
+        Gallery, GalleryCreate, GalleryUpdate,
+        Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
+        ChannelSettings, GallerySettings, SettingsManager
+    )
 
 # New service imports  
-from .services import (
-    GalleryService, ImageService, RenderingService, StorageService
-)
+try:
+    from services import (
+        GalleryService, ImageService, RenderingService, StorageService
+    )
+except ImportError:
+    # Fallback for when running from channel directory
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from services import (
+        GalleryService, ImageService, RenderingService, StorageService
+    )
 
 # New route imports
-from .routes import (
-    create_images_router, create_galleries_router, create_settings_router,
-    create_assets_router, create_legacy_assets_router, create_admin_router,
-    create_subchannel_settings_router
-)
+try:
+    from routes import (
+        create_images_router, create_galleries_router, create_settings_router,
+        create_assets_router, create_legacy_assets_router, create_admin_router,
+        create_subchannel_settings_router
+    )
+except ImportError:
+    # Fallback for when running from channel directory
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from routes import (
+        create_images_router, create_galleries_router, create_settings_router,
+        create_assets_router, create_legacy_assets_router, create_admin_router,
+        create_subchannel_settings_router
+    )
 
 # Handle imports for both standalone and platform usage
 try:
-    from .utils.image_processor import ImageProcessor
-    from .utils.database import PhotoFrameDB
-    from .utils.file_metadata import FileMetadataManager
+    from utils.image_processor import ImageProcessor
+    from utils.database import PhotoFrameDB
+    from utils.file_metadata import FileMetadataManager
 except ImportError:
     # Fallback for standalone testing
     import sys
@@ -159,22 +187,13 @@ class PhotoFrameChannel(BaseChannel):
         
         # NEW: Initialize services for improved architecture
         self.settings_manager = SettingsManager()  # Add missing settings manager
-        self.gallery_service = GalleryService(self.galleries_file)
+        self.gallery_service = GalleryService(self.channel_dir)
         self.image_service = ImageService(
             self.channel_dir / "assets" / "uploads", 
             self.image_processor
         )
-        self.rendering_service = RenderingService(
-            self.image_processor,
-            self.gallery_service,
-            self.image_service,
-            self.channel_dir / "current.jpg",
-            self.channel_dir / "placeholder.jpg"
-        )
-        self.storage_service = StorageService(
-            self.channel_dir / "assets" / "uploads",
-            self.galleries_file
-        )
+        self.rendering_service = RenderingService(self.channel_dir)
+        self.storage_service = StorageService(self.channel_dir)
         
         # Ensure directories exist
         self._ensure_directories()
