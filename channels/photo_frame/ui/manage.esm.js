@@ -456,7 +456,7 @@ class XPhotoFrameManager extends HTMLElement {
     console.log('Uploading files:', files.length, 'valid images:', [...formData.entries()].length);
 
     try {
-      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/upload`, {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/upload`, {
         method: 'POST',
         body: formData,
         credentials: 'include'
