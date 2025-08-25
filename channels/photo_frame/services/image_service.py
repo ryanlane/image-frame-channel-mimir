@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
+try:
+    from PIL import Image as PILImage
+except ImportError:
+    PILImage = None
+
 # Use absolute imports to avoid relative import issues
 try:
     from models import Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult
@@ -141,12 +146,25 @@ class ImageService:
         try:
             print(f"DEBUG: Processing image: {file_path}")
             
-            # Get image info
-            if self.image_processor:
-                print(f"DEBUG: Using image processor for metadata")
-                image_info = self.image_processor.get_image_info(file_path)
-            else:
-                print(f"DEBUG: Using fallback metadata extraction")
+            # Get image info using PIL directly since ImageProcessor doesn't have get_image_info
+            try:
+                if PILImage:
+                    with PILImage.open(file_path) as img:
+                        width, height = img.size
+                        format_name = img.format or Path(filename).suffix.lower().lstrip('.').upper()
+                else:
+                    # Fallback if PIL not available
+                    width, height = 0, 0
+                    format_name = Path(filename).suffix.lower().lstrip('.').upper()
+                    
+                image_info = {
+                    "width": width,
+                    "height": height,
+                    "format": format_name
+                }
+                print(f"DEBUG: Image info extracted: {image_info}")
+            except Exception as e:
+                print(f"DEBUG: Failed to extract image info with PIL: {e}")
                 # Basic fallback
                 image_info = {
                     "width": 0,
@@ -154,12 +172,30 @@ class ImageService:
                     "format": Path(filename).suffix.lower().lstrip('.').upper()
                 }
             
-            print(f"DEBUG: Image info: {image_info}")
-            
-            # Generate thumbnail
+            # Generate thumbnail using ImageProcessor if available
             if self.image_processor:
-                print(f"DEBUG: Generating thumbnail")
-                self.image_processor.generate_thumbnail(file_path)
+                try:
+                    print(f"DEBUG: Generating thumbnail")
+                    # The ImageProcessor expects thumbnail to be next to the image
+                    # It should work with the existing generate_thumbnail method if it exists
+                    # Let's check if the method exists first
+                    if hasattr(self.image_processor, 'generate_thumbnail'):
+                        self.image_processor.generate_thumbnail(file_path)
+                    else:
+                        # Create thumbnail manually using PIL
+                        thumb_path = self.image_processor._get_thumbnail_path(filename)
+                        if PILImage:
+                            with PILImage.open(file_path) as img:
+                                thumbnail = img.copy()
+                                thumbnail.thumbnail((600, 600), PILImage.LANCZOS)
+                                if thumbnail.mode in ('RGBA', 'LA', 'P'):
+                                    thumbnail = thumbnail.convert('RGB')
+                                thumbnail.save(thumb_path, "JPEG", quality=85)
+                            print(f"DEBUG: Thumbnail created manually at: {thumb_path}")
+                        else:
+                            print(f"DEBUG: PIL not available for thumbnail generation")
+                except Exception as e:
+                    print(f"DEBUG: Thumbnail generation failed: {e}")
             else:
                 print(f"DEBUG: No image processor for thumbnail generation")
             
