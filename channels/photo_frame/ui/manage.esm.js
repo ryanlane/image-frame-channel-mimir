@@ -514,9 +514,13 @@ class XPhotoFrameManager extends HTMLElement {
   }
 
   async refreshData() {
+    console.log('Refreshing data...');
     await this.loadInitialData();
+    console.log('Data loaded, re-rendering...');
     this.render();
+    console.log('Rendered, attaching event listeners...');
     this.attachEventListeners();
+    console.log('Refresh complete');
   }
 
   handleGallerySelected(e) {
@@ -889,9 +893,21 @@ class XPhotoFrameManager extends HTMLElement {
       });
       
       if (res.ok) {
-        console.log('Images reordered successfully');
-        // Refresh the data to show the new order
-        await this.refreshData();
+        console.log('Images reordered successfully, refreshing gallery data...');
+        // Just refresh the galleries data to get the new order
+        const galleriesRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, { credentials: 'include' });
+        if (galleriesRes.ok) {
+          const galleriesData = await galleriesRes.json();
+          this.state.galleries = Array.isArray(galleriesData?.subChannels) ? galleriesData.subChannels : [];
+          
+          // Re-populate just the image cards
+          const gridContainer = this.shadowRoot.getElementById('image-grid');
+          if (gridContainer) {
+            gridContainer.innerHTML = ''; // Clear existing cards
+            this.populateImageCards();
+            console.log('Image cards updated with new order');
+          }
+        }
       } else {
         const errorData = await res.text();
         console.error('Failed to reorder images:', errorData);
