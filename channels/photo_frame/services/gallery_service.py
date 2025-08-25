@@ -48,12 +48,23 @@ class GalleryService:
     
     def _save_galleries(self) -> None:
         """Save galleries to JSON file"""
+        print(f"DEBUG SAVE: _save_galleries called")
+        print(f"DEBUG SAVE: galleries_file path: {self.galleries_file}")
+        
         self.galleries_file.parent.mkdir(parents=True, exist_ok=True)
         
         galleries_data = [gallery.to_dict() for gallery in self._galleries]
+        print(f"DEBUG SAVE: Saving {len(galleries_data)} galleries")
+        
+        # Find the birds gallery and print its contentIds
+        for gallery_data in galleries_data:
+            if gallery_data.get('id') == 'birds':
+                print(f"DEBUG SAVE: birds gallery contentIds: {gallery_data.get('contentIds')}")
         
         with open(self.galleries_file, 'w') as f:
             json.dump(galleries_data, f, indent=2)
+            
+        print(f"DEBUG SAVE: Galleries saved to file")
     
     def _generate_gallery_id(self, name: str) -> str:
         """Generate unique ID from gallery name"""
