@@ -169,16 +169,16 @@ class Gallery:
             self.cover_image_id = self.content_ids[0]
 
     def reorder_images(self, dragged_id: str, target_id: str) -> bool:
-        """Reorder images by moving dragged_id before target_id"""
+        """Reorder images by moving dragged_id after target_id"""
         if dragged_id not in self.content_ids or target_id not in self.content_ids:
             return False
         
         # Remove dragged image
         self.content_ids.remove(dragged_id)
         
-        # Insert before target
+        # Insert after target
         target_index = self.content_ids.index(target_id)
-        self.content_ids.insert(target_index, dragged_id)
+        self.content_ids.insert(target_index + 1, dragged_id)
         
         self.modified = datetime.now(timezone.utc).isoformat()
         return True
