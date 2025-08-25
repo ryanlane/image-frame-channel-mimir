@@ -375,6 +375,11 @@ class XPhotoFrameManager extends HTMLElement {
       const card = document.createElement('image-card');
       card.image = image;
       card.isCover = gallery.coverImageId === image.id.toString();
+      
+      // Add a temporary visual indicator to verify DOM changes
+      card.style.border = `3px solid ${index % 2 === 0 ? 'red' : 'blue'}`;
+      card.setAttribute('data-position', index);
+      
       gridContainer.appendChild(card);
     });
     
