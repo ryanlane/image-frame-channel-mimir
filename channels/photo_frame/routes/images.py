@@ -156,40 +156,44 @@ class ImageRoutes:
 
         @router.post("/reorder")
         async def reorder_images(request: Request):
-            """Reorder images by updating sort_order"""
+            """Reorder images by updating sort_order within a specific gallery"""
             try:
                 data = await request.json()
                 dragged_id = data.get("dragged_id")
                 target_id = data.get("target_id")
-                
-                if not dragged_id or not target_id:
-                    raise HTTPException(status_code=400, detail="Both dragged_id and target_id required")
-                
-                # Get all images with current sort order
-                images = self.metadata.get_all_images()
+                gallery_id = data.get("gallery_id")
+
+                if not dragged_id or not target_id or not gallery_id:
+                    raise HTTPException(status_code=400, detail="dragged_id, target_id, and gallery_id are required")
+
+                # Get all images for the specified gallery
+                images = self.metadata.get_images_by_gallery(gallery_id)
+                if not images:
+                    raise HTTPException(status_code=404, detail="Gallery not found or no images in gallery")
+
                 images.sort(key=lambda x: x.get("sort_order", 0))
-                
+
                 # Find the dragged and target images
                 dragged_img = next((img for img in images if img["id"] == dragged_id), None)
                 target_img = next((img for img in images if img["id"] == target_id), None)
-                
+
                 if not dragged_img or not target_img:
                     raise HTTPException(status_code=404, detail="Image not found")
-                
+
                 # Remove dragged image from list
                 images = [img for img in images if img["id"] != dragged_id]
-                
+
                 # Find target position and insert dragged image
                 target_index = next((i for i, img in enumerate(images) if img["id"] == target_id), None)
                 if target_index is not None:
                     images.insert(target_index, dragged_img)
-                
+
                 # Update sort_order for all images
                 for i, img in enumerate(images):
                     self.metadata.update_image(img["id"], {"sort_order": i})
-                
-                return JSONResponse({"success": True})
-                
+
+                return {"message": "Images reordered successfully"}
+
             except HTTPException:
                 raise
             except Exception as e:
