@@ -831,6 +831,9 @@ class XPhotoFrameManager extends HTMLElement {
       const updateIntervalUnit = modal.querySelector('#update-interval-unit').value;
 
       // Save gallery properties
+      console.log('Making gallery metadata request to:', `${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`);
+      console.log('Gallery metadata payload:', { name: galleryName, description: galleryDescription });
+      
       const galleryRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, {
         method: 'PUT',
         credentials: 'include',
@@ -849,6 +852,9 @@ class XPhotoFrameManager extends HTMLElement {
         update_interval_unit: updateIntervalUnit
       };
 
+      console.log('Making gallery settings request to:', `${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}/settings`);
+      console.log('Gallery settings payload:', gallerySettings);
+
       const settingsRes = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}/settings`, {
         method: 'PUT',
         credentials: 'include',
@@ -865,12 +871,21 @@ class XPhotoFrameManager extends HTMLElement {
         this.shadowRoot.removeChild(modal);
         this.shadowRoot.removeChild(style);
       } else {
-        if (!galleryRes.ok) console.error('Failed to update gallery');
-        if (!settingsRes.ok) console.error('Failed to update gallery display settings');
+        if (!galleryRes.ok) {
+          console.error('Failed to update gallery:', galleryRes.status, galleryRes.statusText);
+          const galleryError = await galleryRes.text();
+          console.error('Gallery error response:', galleryError);
+        }
+        if (!settingsRes.ok) {
+          console.error('Failed to update gallery display settings:', settingsRes.status, settingsRes.statusText);
+          const settingsError = await settingsRes.text();
+          console.error('Settings error response:', settingsError);
+        }
         alert('Failed to save some settings');
       }
     } catch (error) {
       console.error('Error saving settings:', error);
+      console.error('Error details:', error.message, error.stack);
       alert('Error saving settings');
     }
   }

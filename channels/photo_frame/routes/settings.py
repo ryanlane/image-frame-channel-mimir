@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 try:
     from services import GalleryService, StorageService
     from models import ChannelSettings, GallerySettings, SettingsManager
+    from models.gallery import GalleryUpdate
 except ImportError:
     # Fallback for when running from channel directory
     import sys
@@ -23,6 +24,7 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from services import GalleryService, StorageService
     from models import ChannelSettings, GallerySettings, SettingsManager
+    from models.gallery import GalleryUpdate
 
 
 class SettingsRoutes:
@@ -184,9 +186,6 @@ class SubchannelSettingsRoutes:
             try:
                 data = await request.json()
                 
-                # Import GalleryUpdate here to avoid circular import issues
-                from models.gallery import GalleryUpdate
-                
                 # Create update object with only the fields provided
                 update_data = GalleryUpdate(
                     name=data.get("name"),
@@ -194,7 +193,7 @@ class SubchannelSettingsRoutes:
                 )
                 
                 # Update the gallery
-                updated_gallery = self.gallery_service.update_gallery(subchannel_id, update_data)
+                self.gallery_service.update_gallery(subchannel_id, update_data)
                 
                 return JSONResponse({"success": True})
                 
