@@ -211,13 +211,21 @@ class GalleryService:
             dragged_id: ID of the image being moved
             target_id: ID of the image to place the dragged image before
         """
+        print(f"DEBUG SERVICE: reorder_gallery_images called with gallery_id={gallery_id}, dragged_id={dragged_id}, target_id={target_id}")
+        
         gallery = self.get_gallery(gallery_id)
         if not gallery:
+            print(f"DEBUG SERVICE: Gallery '{gallery_id}' not found")
             raise ValueError(f"Gallery '{gallery_id}' not found")
         
+        print(f"DEBUG SERVICE: Found gallery '{gallery_id}', calling reorder_images")
         success = gallery.reorder_images(dragged_id, target_id)
+        print(f"DEBUG SERVICE: reorder_images returned: {success}")
+        
         if success:
+            print(f"DEBUG SERVICE: Saving galleries")
             self._save_galleries()
+            print(f"DEBUG SERVICE: Galleries saved")
         
         return success
     
