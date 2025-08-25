@@ -176,9 +176,7 @@ class PhotoFrameChannel(BaseChannel):
             upload_dir=self.channel_dir / "assets" / "uploads"
         )
         
-        # Gallery management (keep existing file-based approach)
-        self.galleries_file = self.channel_dir / "data" / "galleries.json"
-        self._galleries = self._load_galleries()
+        # Gallery management is now handled by GalleryService
         
         # State tracking
         self.last_update = None
@@ -202,19 +200,6 @@ class PhotoFrameChannel(BaseChannel):
         """Load channel configuration"""
         with open(self.config_path, 'r') as f:
             return json.load(f)
-    
-    def _load_galleries(self) -> List[Dict[str, Any]]:
-        """Load galleries (sub-channels) configuration"""
-        if self.galleries_file.exists():
-            with open(self.galleries_file, 'r') as f:
-                return json.load(f)
-        return []
-    
-    def _save_galleries(self):
-        """Save galleries configuration"""
-        self.galleries_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.galleries_file, 'w') as f:
-            json.dump(self._galleries, f, indent=2)
     
     def _ensure_directories(self):
         """Create necessary directories"""
@@ -245,7 +230,7 @@ class PhotoFrameChannel(BaseChannel):
             resolution: (width, height) in pixels
             orientation: "landscape" or "portrait"
             settings: User configuration from Mimir Platform (deprecated - use gallery settings)
-            subchannel_id: Gallery ID to select from (required for proper settings)
+            subchannel_id: Gallery ID to select from (for proper settings)
         """
         try:
             # Create resolution-specific directory
@@ -264,30 +249,32 @@ class PhotoFrameChannel(BaseChannel):
             # Get settings from gallery if specified, otherwise use global settings
             if subchannel_id:
                 try:
-                    current_settings = self.get_gallery_settings(subchannel_id)
+                    current_settings = self.gallery_service.get_gallery_settings(subchannel_id)
                     print(f"📋 Using gallery-specific settings: {current_settings}")
                 except ValueError:
                     print(f"⚠️ Gallery '{subchannel_id}' not found, using global settings")
                     current_settings = settings or {}
             else:
                 current_settings = settings or {}
-            
+
+            all_images = self.metadata.get_all_images()
+
             # Get next image based on gallery selection or all images
             if subchannel_id:
-                gallery = self._find_gallery(subchannel_id)
-                if gallery:
-                    image_record = await self._get_next_image_from_gallery(gallery, current_settings)
-                else:
-                    print(f"⚠️ Gallery '{subchannel_id}' not found, using all images")
-                    image_record = await self._get_next_image(current_settings)
+                image_record = await self.gallery_service.get_next_image_from_gallery(
+                    subchannel_id, all_images, current_settings
+                )
+                if not image_record:
+                    print(f"⚠️ Gallery '{subchannel_id}' not found or has no images, falling back to all images")
+                    image_record = await self._get_next_image(current_settings, all_images)
             else:
-                image_record = await self._get_next_image(current_settings)
+                image_record = await self._get_next_image(current_settings, all_images)
             
             if not image_record:
                 # No images available, use placeholder
                 placeholder_path = self.channel_dir / "placeholder.jpg"
                 if placeholder_path.exists():
-                    # Process placeholder for this resolution using old method signature
+                    # Process placeholder for this resolution
                     await self._process_placeholder_for_display(
                         placeholder_path, output_path, resolution, current_settings
                     )
@@ -296,7 +283,7 @@ class PhotoFrameChannel(BaseChannel):
                 else:
                     raise Exception("No images available and no placeholder found")
             
-            # Process image for display using the existing method
+            # Process image for display
             await self._process_image_for_display(
                 image_record, resolution, orientation, current_settings
             )
@@ -304,7 +291,6 @@ class PhotoFrameChannel(BaseChannel):
             # Copy the processed image to our resolution-specific location
             legacy_current = self.channel_dir / self.config["current_image"]
             if legacy_current.exists():
-                import shutil
                 shutil.copy2(legacy_current, output_path)
                 print(f"✅ Generated {resolution_folder}/current.jpg ({output_path.stat().st_size} bytes)")
             
@@ -326,7 +312,6 @@ class PhotoFrameChannel(BaseChannel):
             try:
                 placeholder_path = self.channel_dir / "placeholder.jpg"
                 if placeholder_path.exists():
-                    import shutil
                     shutil.copy2(placeholder_path, output_path)
                     print(f"🔄 Used placeholder as fallback for {resolution_folder}")
                     return str(output_path)
@@ -729,7 +714,7 @@ class PhotoFrameChannel(BaseChannel):
         return self.config["placeholder_image"]
     
     # =============================================================================
-    # Gallery (Sub-Channel) Support Methods
+    # Gallery (Sub-Channel) Support Methods - Delegated to GalleryService
     # =============================================================================
     
     def supports_subchannels(self) -> bool:
@@ -757,90 +742,24 @@ class PhotoFrameChannel(BaseChannel):
         }
     
     def get_subchannels(self) -> List[Dict[str, Any]]:
-        """Get all galleries (sub-channels)"""
-        return self._galleries.copy()
+        """Get all galleries by delegating to the GalleryService"""
+        return [gallery.to_dict() for gallery in self.gallery_service.get_all_galleries()]
     
     def create_subchannel(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new gallery"""
-        if "name" not in data:
-            raise ValueError("Gallery name is required")
-        
-        gallery_id = self._generate_subchannel_id(data["name"])
-        
-        # Get default settings from config or use hardcoded defaults
-        default_settings = self._config.get("settings", {}).get("defaults", {})
-        
-        gallery = {
-            "id": gallery_id,
-            "name": data["name"],
-            "description": data.get("description", ""),
-            "contentIds": [],
-            "tags": data.get("tags", []),
-            "created": datetime.now(timezone.utc).isoformat(),
-            "modified": datetime.now(timezone.utc).isoformat(),
-            "imageCount": 0,
-            "coverImageId": None,
-            # Display settings for this gallery
-            "displaySettings": {
-                "order_mode": default_settings.get("order_mode", "added"),
-                "crop_mode": default_settings.get("crop_mode", "smart_crop"),
-                "transition_effect": default_settings.get("transition_effect", "fade"),
-                "update_interval_value": default_settings.get("update_interval_value", 30),
-                "update_interval_unit": default_settings.get("update_interval_unit", "minutes"),
-                "slideshow_enabled": default_settings.get("slideshow_enabled", True)
-            }
-        }
-        
-        self._galleries.append(gallery)
-        self._save_galleries()
-        
-        return gallery
+        """Create a new gallery by delegating to the GalleryService"""
+        gallery_create = GalleryCreate(**data)
+        gallery = self.gallery_service.create_gallery(gallery_create)
+        return gallery.to_dict()
     
     def update_subchannel(self, subchannel_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update an existing gallery"""
-        for i, gallery in enumerate(self._galleries):
-            if gallery["id"] == subchannel_id:
-                # Update allowed fields
-                if "name" in data:
-                    gallery["name"] = data["name"]
-                if "description" in data:
-                    gallery["description"] = data["description"]
-                if "tags" in data:
-                    gallery["tags"] = data["tags"]
-                if "cover_image_id" in data:
-                    gallery["coverImageId"] = data["cover_image_id"]
-                
-                # Update display settings if provided
-                if "displaySettings" in data:
-                    # Ensure displaySettings exists
-                    if "displaySettings" not in gallery:
-                        gallery["displaySettings"] = {}
-                    
-                    # Validate and update each setting
-                    display_settings = data["displaySettings"]
-                    for key, value in display_settings.items():
-                        if key in ["order_mode", "crop_mode", "transition_effect", "update_interval_unit"]:
-                            gallery["displaySettings"][key] = value
-                        elif key in ["update_interval_value"]:
-                            gallery["displaySettings"][key] = int(value)
-                        elif key in ["slideshow_enabled"]:
-                            gallery["displaySettings"][key] = bool(value)
-                
-                gallery["modified"] = datetime.now(timezone.utc).isoformat()
-                self._save_galleries()
-                return gallery
-        
-        raise ValueError(f"Gallery '{subchannel_id}' not found")
+        """Update a gallery by delegating to the GalleryService"""
+        gallery_update = GalleryUpdate(**data)
+        gallery = self.gallery_service.update_gallery(subchannel_id, gallery_update)
+        return gallery.to_dict()
     
     def delete_subchannel(self, subchannel_id: str) -> bool:
-        """Delete a gallery (removes gallery but keeps images)"""
-        for i, gallery in enumerate(self._galleries):
-            if gallery["id"] == subchannel_id:
-                del self._galleries[i]
-                self._save_galleries()
-                return True
-        
-        raise ValueError(f"Gallery '{subchannel_id}' not found")
+        """Delete a gallery by delegating to the GalleryService"""
+        return self.gallery_service.delete_gallery(subchannel_id)
     
     def assign_content_to_subchannel(
         self, 
@@ -848,42 +767,11 @@ class PhotoFrameChannel(BaseChannel):
         content_ids: List[str], 
         action: str = "add"
     ) -> bool:
-        """Assign images to a gallery"""
-        gallery = self._find_gallery(subchannel_id)
-        if not gallery:
-            raise ValueError(f"Gallery '{subchannel_id}' not found")
-        
-        # Validate that content_ids are valid image IDs
-        all_images = self.metadata.get_all_images()
-        valid_image_ids = {str(img["id"]) for img in all_images}
-        invalid_ids = set(content_ids) - valid_image_ids
-        if invalid_ids:
-            raise ValueError(f"Invalid image IDs: {', '.join(invalid_ids)}")
-        
-        if action == "set":
-            gallery["contentIds"] = content_ids.copy()
-        elif action == "add":
-            # Add new images, avoid duplicates
-            for content_id in content_ids:
-                if content_id not in gallery["contentIds"]:
-                    gallery["contentIds"].append(content_id)
-        elif action == "remove":
-            gallery["contentIds"] = [
-                c for c in gallery["contentIds"] if c not in content_ids
-            ]
-        else:
-            raise ValueError(f"Invalid action '{action}'. Use 'set', 'add', or 'remove'")
-        
-        # Update metadata
-        gallery["imageCount"] = len(gallery["contentIds"])
-        gallery["modified"] = datetime.now(timezone.utc).isoformat()
-        
-        # Set cover image if none exists and we have images
-        if gallery["contentIds"] and not gallery["coverImageId"]:
-            gallery["coverImageId"] = gallery["contentIds"][0]
-        
-        self._save_galleries()
-        return True
+        """Assign images to a gallery by delegating to the GalleryService"""
+        all_image_ids = {str(img["id"]) for img in self.metadata.get_all_images()}
+        return self.gallery_service.assign_images_to_gallery(
+            subchannel_id, content_ids, action, all_image_ids
+        )
     
     def get_subchannel_content(
         self, 
@@ -891,182 +779,12 @@ class PhotoFrameChannel(BaseChannel):
         limit: int = None, 
         offset: int = None
     ) -> Dict[str, Any]:
-        """Get images in a gallery with pagination"""
-        gallery = self._find_gallery(subchannel_id)
-        if not gallery:
-            raise ValueError(f"Gallery '{subchannel_id}' not found")
-        
-        content_ids = gallery["contentIds"]
-        total_count = len(content_ids)
-        
-        # Apply pagination
-        if offset:
-            content_ids = content_ids[offset:]
-        if limit:
-            content_ids = content_ids[:limit]
-        
-        # Get detailed image data
-        images = []
-        for content_id in content_ids:
-            image_data = self.metadata.get_image_by_id(str(content_id))
-            if image_data:
-                images.append({
-                    "id": str(image_data["id"]),
-                    "name": image_data.get("title", image_data["original_name"]),
-                    "filename": image_data["filename"],
-                    "thumbnailUrl": f"/api/channels/{self.id}/assets/uploads/{Path(image_data['filename']).stem}.thumb.jpg",
-                    "uploadUrl": f"/api/channels/{self.id}/assets/uploads/{image_data['filename']}",
-                    "enabled": image_data.get("enabled", True),
-                    "uploaded": image_data["upload_time"],
-                    "description": image_data.get("description", ""),
-                    "tags": image_data.get("tags", [])
-                })
-        
-        return {
-            "content": images,
-            "totalCount": total_count,
-            "limit": limit,
-            "offset": offset or 0
-        }
-    
-    def _find_gallery(self, gallery_id: str) -> Optional[Dict[str, Any]]:
-        """Find a gallery by ID"""
-        for gallery in self._galleries:
-            if gallery["id"] == gallery_id:
-                return gallery
-        return None
-    
-    def get_gallery_settings(self, gallery_id: str) -> Dict[str, Any]:
-        """Get display settings for a specific gallery"""
-        gallery = self._find_gallery(gallery_id)
-        if not gallery:
-            raise ValueError(f"Gallery '{gallery_id}' not found")
-        
-        # Return display settings, falling back to defaults if not set
-        default_settings = self._config.get("settings", {}).get("defaults", {})
-        display_settings = gallery.get("displaySettings", {})
-        
-        return {
-            "order_mode": display_settings.get("order_mode", default_settings.get("order_mode", "added")),
-            "crop_mode": display_settings.get("crop_mode", default_settings.get("crop_mode", "smart_crop")),
-            "transition_effect": display_settings.get("transition_effect", default_settings.get("transition_effect", "fade")),
-            "update_interval_value": display_settings.get("update_interval_value", default_settings.get("update_interval_value", 30)),
-            "update_interval_unit": display_settings.get("update_interval_unit", default_settings.get("update_interval_unit", "minutes")),
-            "slideshow_enabled": display_settings.get("slideshow_enabled", default_settings.get("slideshow_enabled", True))
-        }
-    
-    def update_gallery_settings(self, gallery_id: str, settings: Dict[str, Any]) -> bool:
-        """Update display settings for a specific gallery"""
-        gallery = self._find_gallery(gallery_id)
-        if not gallery:
-            raise ValueError(f"Gallery '{gallery_id}' not found")
-        
-        # Validate settings (synchronous validation)
-        valid_orders = ["added", "random", "custom"]
-        valid_crops = ["smart_crop", "letterbox", "stretch"]
-        valid_transitions = ["fade", "slide", "none"]
-        valid_units = ["days", "hours", "minutes", "seconds"]
-        
-        if "order_mode" in settings and settings["order_mode"] not in valid_orders:
-            raise ValueError(f"Invalid order_mode. Must be one of: {', '.join(valid_orders)}")
-        if "crop_mode" in settings and settings["crop_mode"] not in valid_crops:
-            raise ValueError(f"Invalid crop_mode. Must be one of: {', '.join(valid_crops)}")
-        if "transition_effect" in settings and settings["transition_effect"] not in valid_transitions:
-            raise ValueError(f"Invalid transition_effect. Must be one of: {', '.join(valid_transitions)}")
-        if "update_interval_unit" in settings and settings["update_interval_unit"] not in valid_units:
-            raise ValueError(f"Invalid update_interval_unit. Must be one of: {', '.join(valid_units)}")
-        if "update_interval_value" in settings:
-            try:
-                value = int(settings["update_interval_value"])
-                if value < 1:
-                    raise ValueError("update_interval_value must be at least 1")
-            except (TypeError, ValueError):
-                raise ValueError("update_interval_value must be a valid positive integer")
-        
-        # Ensure displaySettings exists
-        if "displaySettings" not in gallery:
-            gallery["displaySettings"] = {}
-        
-        # Update settings
-        for key, value in settings.items():
-            if key in ["order_mode", "crop_mode", "transition_effect", "update_interval_unit"]:
-                gallery["displaySettings"][key] = value
-            elif key in ["update_interval_value"]:
-                gallery["displaySettings"][key] = int(value)
-            elif key in ["slideshow_enabled"]:
-                gallery["displaySettings"][key] = bool(value)
-        
-        gallery["modified"] = datetime.now(timezone.utc).isoformat()
-        self._save_galleries()
-        return True
-    
-    async def _get_next_image_from_gallery(
-        self, 
-        gallery: Dict[str, Any], 
-        settings: Dict[str, Any] = None
-    ) -> Optional[Dict[str, Any]]:
-        """Get next image from a specific gallery"""
-        if not gallery["contentIds"]:
-            return None
-        
-        # Get image data for images in this gallery
-        gallery_images = []
-        for content_id in gallery["contentIds"]:
-            image_data = self.metadata.get_image_by_id(str(content_id))
-            if image_data and image_data.get("enabled", True):
-                gallery_images.append(image_data)
-        
-        if gallery_images:
-            # TODO: Implement proper rotation logic based on settings
-            # For now, return first available image
-            return gallery_images[0]
-        
-        return None
+        """Get gallery content by delegating to the GalleryService"""
+        all_images = self.metadata.get_all_images()
+        return self.gallery_service.get_gallery_content(
+            subchannel_id, all_images, limit, offset
+        )
     
     def reorder_gallery_images(self, gallery_id: str, dragged_id: str, target_id: str) -> bool:
-        """
-        Reorder images within a specific gallery's contentIds array
-        
-        Args:
-            gallery_id: ID of the gallery to reorder images in
-            dragged_id: ID of the image being moved
-            target_id: ID of the image to place the dragged image before
-            
-        Returns:
-            bool: True if reordering was successful
-            
-        Raises:
-            ValueError: If gallery or images not found
-        """
-        from datetime import datetime, timezone
-        
-        # Find the gallery
-        gallery = self._find_gallery(gallery_id)
-        if not gallery:
-            raise ValueError(f"Gallery '{gallery_id}' not found")
-        
-        content_ids = gallery["contentIds"]
-        
-        # Validate that both images exist in the gallery
-        if dragged_id not in content_ids:
-            raise ValueError(f"Image '{dragged_id}' not found in gallery '{gallery_id}'")
-        if target_id not in content_ids:
-            raise ValueError(f"Target image '{target_id}' not found in gallery '{gallery_id}'")
-        
-        # Remove the dragged image from its current position
-        content_ids.remove(dragged_id)
-        
-        # Find the new position (before the target)
-        target_index = content_ids.index(target_id)
-        
-        # Insert the dragged image at the new position
-        content_ids.insert(target_index, dragged_id)
-        
-        # Update the gallery
-        gallery["contentIds"] = content_ids
-        gallery["modified"] = datetime.now(timezone.utc).isoformat()
-        
-        # Save the changes
-        self._save_galleries()
-        
-        return True
+        """Reorder images in a gallery by delegating to the GalleryService"""
+        return self.gallery_service.reorder_gallery_images(gallery_id, dragged_id, target_id)
