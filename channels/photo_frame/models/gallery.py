@@ -170,17 +170,28 @@ class Gallery:
 
     def reorder_images(self, dragged_id: str, target_id: str) -> bool:
         """Reorder images by moving dragged_id before target_id"""
+        print(f"DEBUG: Reordering in gallery {self.id}")
+        print(f"DEBUG: dragged_id={dragged_id}, target_id={target_id}")
+        print(f"DEBUG: content_ids before: {self.content_ids}")
+        print(f"DEBUG: dragged_id in content_ids: {dragged_id in self.content_ids}")
+        print(f"DEBUG: target_id in content_ids: {target_id in self.content_ids}")
+        
         if dragged_id not in self.content_ids or target_id not in self.content_ids:
+            print(f"DEBUG: One or both IDs not found in content_ids")
             return False
         
         # Remove dragged image
         self.content_ids.remove(dragged_id)
+        print(f"DEBUG: content_ids after removal: {self.content_ids}")
         
         # Insert before target
         target_index = self.content_ids.index(target_id)
+        print(f"DEBUG: target_index: {target_index}")
         self.content_ids.insert(target_index, dragged_id)
+        print(f"DEBUG: content_ids after insertion: {self.content_ids}")
         
         self.modified = datetime.now(timezone.utc).isoformat()
+        print(f"DEBUG: Reorder completed successfully")
         return True
 
     def to_dict(self) -> Dict[str, Any]:
