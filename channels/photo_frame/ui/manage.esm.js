@@ -405,21 +405,40 @@ class XPhotoFrameManager extends HTMLElement {
       .map(id => imageMap.get(id))
       .filter(img => img !== undefined); // Remove any missing images
     
-    console.log('populateImageCards debug:');
-    console.log('Gallery contentIds:', gallery.contentIds);
-    console.log('All images count:', this.state.allImages.length);
-    console.log('Filtered gallery images count:', galleryImages.length);
-    console.log('Gallery images order:', galleryImages.map(img => img.id));
-    
     galleryImages.forEach((image, index) => {
       const card = document.createElement('image-card');
       card.image = image;
       card.isCover = gallery.coverImageId === image.id.toString();
-      
+      // Add remove button
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn-secondary remove-image-btn';
+      removeBtn.textContent = 'Remove from Gallery';
+      removeBtn.style.marginTop = '8px';
+      removeBtn.addEventListener('click', (e) => this.handleRemoveImageFromGallery(e, image.id, gallery.id));
+      card.appendChild(removeBtn);
       gridContainer.appendChild(card);
     });
-    
-    console.log('populateImageCards completed, grid container children:', gridContainer.children.length);
+  }
+  async handleRemoveImageFromGallery(e, imageId, galleryId) {
+    e.stopPropagation();
+    if (!galleryId || !imageId) return;
+    if (!confirm('Remove this image from the gallery?')) return;
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${galleryId}/content`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentIds: [imageId], action: 'remove' })
+      });
+      if (res.ok) {
+        await this.refreshData();
+      } else {
+        const errorText = await res.text();
+        alert('Failed to remove image: ' + errorText);
+      }
+    } catch (error) {
+      alert('Error removing image: ' + error.message);
+    }
   }
 
   attachEventListeners() {
@@ -717,6 +736,9 @@ class XPhotoFrameManager extends HTMLElement {
                 </div>
               </div>
             </div>
+            <div class="settings-section" style="margin-top:32px;">
+              <button class="btn-secondary" id="delete-gallery-btn" style="background:#dc3545;color:white;width:100%;margin-top:16px;">🗑️ Delete Gallery</button>
+            </div>
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" id="cancel-settings">Cancel</button>
@@ -725,6 +747,29 @@ class XPhotoFrameManager extends HTMLElement {
         </div>
       </div>
     `;
+    // Add delete gallery handler
+    modal.querySelector('#delete-gallery-btn').addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to delete this gallery and remove all its images? This cannot be undone.')) return;
+      try {
+        const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        if (res.ok) {
+          // Remove modal and refresh
+          if (modal && modal.parentNode === this.shadowRoot) this.shadowRoot.removeChild(modal);
+          if (style && style.parentNode === this.shadowRoot) this.shadowRoot.removeChild(style);
+          this.state.view = 'gallery-overview';
+          this.state.currentGalleryId = null;
+          await this.refreshData();
+        } else {
+          const errorText = await res.text();
+          alert('Failed to delete gallery: ' + errorText);
+        }
+      } catch (error) {
+        alert('Error deleting gallery: ' + error.message);
+      }
+    });
 
     // Add modal styles
     const style = document.createElement('style');
