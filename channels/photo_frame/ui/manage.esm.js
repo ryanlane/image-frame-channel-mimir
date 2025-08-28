@@ -272,6 +272,11 @@ class XPhotoFrameManager extends HTMLElement {
       <div class="grid-container" id="gallery-grid">
         <!-- Gallery cards will be inserted here -->
       </div>
+      <template id="gallery-card-template">
+        <div class="gallery-card-actions">
+          <button class="btn-secondary delete-gallery-btn" data-gallery-id="">🗑️ Delete</button>
+        </div>
+      </template>
     `;
   }
 
@@ -327,12 +332,45 @@ class XPhotoFrameManager extends HTMLElement {
       return;
     }
 
+    // Clear existing cards
+    gridContainer.innerHTML = '';
+
     this.state.galleries.forEach(gallery => {
       const card = document.createElement('gallery-card');
       card.gallery = gallery;
       card.allImages = this.state.allImages;
       gridContainer.appendChild(card);
+
+      // Add delete button to each card
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'gallery-card-actions';
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn-secondary delete-gallery-btn';
+      deleteBtn.textContent = '🗑️ Delete';
+      deleteBtn.setAttribute('data-gallery-id', gallery.id);
+      deleteBtn.addEventListener('click', (e) => this.handleDeleteGallery(e, gallery.id));
+      actionsDiv.appendChild(deleteBtn);
+      card.appendChild(actionsDiv);
     });
+  }
+  async handleDeleteGallery(e, galleryId) {
+    e.stopPropagation();
+    if (!galleryId) return;
+    if (!confirm('Are you sure you want to delete this gallery? This cannot be undone.')) return;
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${galleryId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        await this.refreshData();
+      } else {
+        const errorText = await res.text();
+        alert('Failed to delete gallery: ' + errorText);
+      }
+    } catch (error) {
+      alert('Error deleting gallery: ' + error.message);
+    }
   }
 
   populateImageCards() {
