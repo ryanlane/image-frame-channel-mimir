@@ -1,11 +1,22 @@
 """
 Gallery management routes for Photo Frame Channel
 
+⚠️ API INTEGRATION: These routes are mounted under /api/channels/com.epaperframe.photoframe/
 Handles all gallery-related endpoints including:
-- Gallery creation, listing, and management
-- Gallery image assignment and removal
-- Gallery settings and metadata
-- Gallery-specific image operations
+- Gallery creation, listing, and management (/subchannels)
+- Gallery image assignment and removal (/subchannels/{id}/content)
+- Gallery settings and metadata (/subchannels/{id}/settings)
+- Gallery-specific image operations (/subchannels/{id}/images)
+
+IMPORTANT: All routes must be compatible with the main API structure.
+The main API expects these endpoints:
+- GET /api/channels/{channel_id}/subchannels
+- POST /api/channels/{channel_id}/subchannels
+- GET /api/channels/{channel_id}/subchannels/{subchannel_id}
+- PUT /api/channels/{channel_id}/subchannels/{subchannel_id}
+- DELETE /api/channels/{channel_id}/subchannels/{subchannel_id}
+- POST /api/channels/{channel_id}/subchannels/{subchannel_id}/content
+- GET /api/channels/{channel_id}/subchannels/{subchannel_id}/images
 """
 
 from fastapi import APIRouter, HTTPException, Request
@@ -35,8 +46,14 @@ class GalleryRoutes:
         self.storage_service = storage_service
         
     def create_router(self) -> APIRouter:
-        """Create and configure the galleries router"""
-        router = APIRouter(prefix="/galleries", tags=["galleries"])
+        """
+        Create and configure the galleries router for API integration
+        
+        IMPORTANT: Uses /subchannels prefix to match main API expectations
+        When mounted under /api/channels/com.epaperframe.photoframe/, this creates:
+        - /api/channels/com.epaperframe.photoframe/subchannels/
+        """
+        router = APIRouter(prefix="/subchannels", tags=["subchannels"])
         
         @router.get("")
         async def list_galleries():
@@ -160,9 +177,86 @@ class GalleryRoutes:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Gallery deletion failed: {str(e)}")
 
+        @router.post("/{gallery_id}/content")
+        async def assign_content_to_subchannel(gallery_id: str, request: Request):
+            """
+            Assign content (images) to a subchannel (gallery)
+            
+            Expected by main API at: POST /api/channels/{channel_id}/subchannels/{subchannel_id}/content
+            
+            Body:
+            {
+                "contentIds": ["1", "2", "3"],
+                "action": "add"  // "add", "remove", or "replace"
+            }
+            """
+            try:
+                data = await request.json()
+                content_ids = data.get("contentIds", [])
+                action = data.get("action", "add")
+                
+                if not content_ids:
+                    raise HTTPException(status_code=400, detail="contentIds array required")
+                
+                if action not in ["add", "remove", "replace"]:
+                    raise HTTPException(status_code=400, detail="action must be 'add', 'remove', or 'replace'")
+                
+                # Use the gallery service to assign content
+                if action == "add":
+                    result = self.gallery_service.assign_images_to_gallery(
+                        gallery_id, content_ids, all_image_ids=set(content_ids)
+                    )
+                elif action == "remove":
+                    result = self.gallery_service.remove_images_from_gallery(gallery_id, content_ids)
+                else:  # replace
+                    result = self.gallery_service.replace_gallery_images(gallery_id, content_ids)
+                
+                return JSONResponse({
+                    "success": True,
+                    "action": action,
+                    "content_ids": content_ids,
+                    "result": result
+                })
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Content assignment failed: {str(e)}")
+
+        @router.get("/{gallery_id}/images")
+        async def get_subchannel_images(gallery_id: str):
+            """
+            Get images from a specific subchannel (gallery)
+            
+            Expected by main API at: GET /api/channels/{channel_id}/subchannels/{subchannel_id}/images
+            """
+            try:
+                gallery = self.gallery_service.get_gallery(gallery_id)
+                if not gallery:
+                    raise HTTPException(status_code=404, detail="Gallery not found")
+                
+                # Get all images and filter by gallery content
+                all_images = self.image_service.get_all_images()
+                gallery_images = [
+                    img for img in all_images 
+                    if str(img.get("id")) in gallery.content_ids
+                ]
+                
+                return JSONResponse({
+                    "images": gallery_images,
+                    "total": len(gallery_images),
+                    "gallery_id": gallery_id,
+                    "gallery_name": gallery.name
+                })
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get gallery images: {str(e)}")
+
         @router.post("/{gallery_id}/images")
         async def assign_images_to_gallery(gallery_id: str, request: Request):
-            """Assign images to a gallery"""
+            """Assign images to a gallery (legacy endpoint - use /content instead)"""
             try:
                 data = await request.json()
                 image_ids = data.get("image_ids", [])
@@ -200,6 +294,69 @@ class GalleryRoutes:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Image removal failed: {str(e)}")
+
+        @router.get("/{gallery_id}/images/{image_id}/thumbnail")
+        async def get_subchannel_image_thumbnail(gallery_id: str, image_id: str):
+            """
+            Get thumbnail for a specific image in a subchannel
+            
+            Expected by main API at: GET /api/channels/{channel_id}/subchannels/{subchannel_id}/images/{image_id}/thumbnail
+            
+            This is a critical endpoint for the main API integration!
+            """
+            try:
+                # Verify gallery exists
+                gallery = self.gallery_service.get_gallery(gallery_id)
+                if not gallery:
+                    raise HTTPException(status_code=404, detail="Gallery not found")
+                
+                # Verify image is in this gallery
+                if str(image_id) not in gallery.content_ids:
+                    raise HTTPException(status_code=404, detail="Image not found in this gallery")
+                
+                # Get image metadata to find filename
+                all_images = self.image_service.get_all_images()
+                image = next((img for img in all_images if str(img.get("id")) == str(image_id)), None)
+                
+                if not image:
+                    raise HTTPException(status_code=404, detail="Image not found")
+                
+                filename = image.get("filename")
+                if not filename:
+                    raise HTTPException(status_code=404, detail="Image filename not found")
+                
+                # Generate thumbnail filename: image.jpg -> image.thumb.jpg
+                name_stem = Path(filename).stem
+                thumb_filename = f"{name_stem}.thumb.jpg"
+                thumb_path = self.storage_service.channel_dir / "assets" / "uploads" / thumb_filename
+                
+                # Check if thumbnail exists, generate if needed
+                if not thumb_path.exists():
+                    original_path = self.storage_service.channel_dir / "assets" / "uploads" / filename
+                    if original_path.exists():
+                        # Generate thumbnail using storage service
+                        await self.storage_service.ensure_thumbnail_exists(str(original_path))
+                    
+                    # Check again after generation
+                    if not thumb_path.exists():
+                        raise HTTPException(status_code=404, detail="Thumbnail not available")
+                
+                # Serve the thumbnail
+                from fastapi.responses import FileResponse
+                return FileResponse(
+                    path=str(thumb_path),
+                    media_type="image/jpeg",
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "X-Gallery-ID": gallery_id,
+                        "X-Image-ID": image_id
+                    }
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Thumbnail serving failed: {str(e)}")
 
         # Note: Image reordering is handled by the subchannel settings router
         # at /subchannels/{subchannel_id}/images/reorder

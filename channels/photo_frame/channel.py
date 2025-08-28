@@ -157,12 +157,32 @@ class PhotoFrameChannel(BaseChannel):
     """
     Photo Frame channel for Mimir Platform v2.4+ with Gallery Support
     Provides digital photo frame functionality with intelligent image management and galleries
+    
+    ⚠️ CRITICAL: API INTEGRATION NOTES ⚠️
+    ==========================================
+    This channel integrates with the centralized Mimir API at:
+    - Base API: /api/channels/com.epaperframe.photoframe/
+    - Channel ID: com.epaperframe.photoframe (from config.json)
+    - Directory: /var/opt/mimir/mimir-api/channels/photo_frame/
+    
+    All paths and endpoints must use the channel discovery service for proper resolution.
+    Never hardcode paths - always use dynamic resolution through the API.
     """
     
     def __init__(self, channel_dir: str):
+        """
+        Initialize Photo Frame Channel
+        
+        Args:
+            channel_dir: Path to channel directory (resolved by ChannelDiscoveryService)
+                        Should be: /var/opt/mimir/mimir-api/channels/photo_frame/
+        """
         self.channel_dir = Path(channel_dir)
         self.config_path = self.channel_dir / "config.json"
         self._config = self._load_config()
+        
+        # Validate critical paths for API integration
+        self._validate_api_integration()
         
         # Initialize components
         # Keep database for settings only
@@ -196,6 +216,38 @@ class PhotoFrameChannel(BaseChannel):
         
         # Ensure directories exist
         self._ensure_directories()
+        
+        print(f"✅ Photo Frame Channel initialized:")
+        print(f"   📂 Channel Directory: {self.channel_dir}")
+        print(f"   🆔 Channel ID: {self.id}")
+        print(f"   📡 API Base: /api/channels/{self.id}/")
+    
+    def _validate_api_integration(self):
+        """Validate that the channel is properly set up for API integration"""
+        # Check config exists and has correct ID
+        if not self.config_path.exists():
+            raise RuntimeError(f"config.json not found at {self.config_path}")
+        
+        config = self._load_config()
+        expected_id = "com.epaperframe.photoframe"
+        actual_id = config.get("id")
+        
+        if actual_id != expected_id:
+            print(f"⚠️  WARNING: Channel ID mismatch!")
+            print(f"   Expected: {expected_id}")
+            print(f"   Actual: {actual_id}")
+            print(f"   This may cause API routing issues.")
+        
+        # Check critical directories
+        required_dirs = [
+            self.channel_dir / "assets" / "uploads",
+            self.channel_dir / "data"
+        ]
+        
+        for dir_path in required_dirs:
+            if not dir_path.exists():
+                print(f"📁 Creating required directory: {dir_path}")
+                dir_path.mkdir(parents=True, exist_ok=True)
     
     def _load_config(self) -> Dict[str, Any]:
         """Load channel configuration"""
