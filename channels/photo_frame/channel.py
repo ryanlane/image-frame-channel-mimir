@@ -757,6 +757,10 @@ class PhotoFrameChannel(BaseChannel):
             ]
         }
     
+    def list_subchannels(self) -> List[Dict[str, Any]]:
+        """Get all galleries - API-compatible method name"""
+        return [gallery.to_dict() for gallery in self.gallery_service.get_all_galleries()]
+    
     def get_subchannels(self) -> List[Dict[str, Any]]:
         """Get all galleries by delegating to the GalleryService"""
         return [gallery.to_dict() for gallery in self.gallery_service.get_all_galleries()]
@@ -765,29 +769,73 @@ class PhotoFrameChannel(BaseChannel):
         """Create a new gallery by delegating to the GalleryService"""
         gallery_create = GalleryCreate(**data)
         gallery = self.gallery_service.create_gallery(gallery_create)
+        return {"success": True, "subchannel": gallery.to_dict()}
+    
+    def get_subchannel(self, subchannel_id: str) -> Dict[str, Any]:
+        """Get specific subchannel details - API-compatible method"""
+        gallery = self.gallery_service.get_gallery(subchannel_id)
+        if not gallery:
+            return None
         return gallery.to_dict()
     
     def update_subchannel(self, subchannel_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update a gallery by delegating to the GalleryService"""
         gallery_update = GalleryUpdate(**data)
         gallery = self.gallery_service.update_gallery(subchannel_id, gallery_update)
-        return gallery.to_dict()
+        return {"success": True, "gallery": gallery.to_dict()}
     
-    def delete_subchannel(self, subchannel_id: str) -> bool:
+    def delete_subchannel(self, subchannel_id: str) -> Dict[str, Any]:
         """Delete a gallery by delegating to the GalleryService"""
-        return self.gallery_service.delete_gallery(subchannel_id)
+        # Get gallery info before deletion for response
+        gallery = self.gallery_service.get_gallery(subchannel_id)
+        if not gallery:
+            return {"success": False, "error": "Gallery not found"}
+        
+        gallery_info = gallery.to_dict()
+        success = self.gallery_service.delete_gallery(subchannel_id)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Subchannel '{gallery_info.get('name', subchannel_id)}' has been deleted",
+                "deletedSubchannel": {
+                    "id": gallery_info["id"],
+                    "name": gallery_info.get("name", ""),
+                    "imageCount": gallery_info.get("imageCount", 0)
+                }
+            }
+        else:
+            return {"success": False, "error": "Failed to delete gallery"}
     
     def assign_content_to_subchannel(
         self, 
         subchannel_id: str, 
-        content_ids: List[str], 
-        action: str = "add"
-    ) -> bool:
-        """Assign images to a gallery by delegating to the GalleryService"""
+        content_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Assign images to a gallery - API-compatible method"""
+        content_ids = content_data.get('contentIds', [])
+        action = content_data.get('action', 'add')
+        
+        if not content_ids:
+            return {"success": False, "error": "No content IDs provided"}
+        
+        if action not in ['add', 'remove']:
+            return {"success": False, "error": "Action must be 'add' or 'remove'"}
+        
+        # Get all available image IDs
         all_image_ids = {str(img["id"]) for img in self.metadata.get_all_images()}
-        return self.gallery_service.assign_images_to_gallery(
+        
+        # Perform the assignment
+        success = self.gallery_service.assign_images_to_gallery(
             subchannel_id, content_ids, action, all_image_ids
         )
+        
+        if success:
+            # Return updated gallery information
+            gallery = self.gallery_service.get_gallery(subchannel_id)
+            return {"success": True, "gallery": gallery.to_dict() if gallery else None}
+        else:
+            return {"success": False, "error": "Failed to assign content to gallery"}
     
     def get_subchannel_content(
         self, 
@@ -800,6 +848,287 @@ class PhotoFrameChannel(BaseChannel):
         return self.gallery_service.get_gallery_content(
             subchannel_id, all_images, limit, offset
         )
+    
+    def list_subchannel_images(
+        self, 
+        subchannel_id: str, 
+        include_metadata: bool = False
+    ) -> Dict[str, Any]:
+        """Get list of images in a specific subchannel - API-compatible method"""
+        gallery = self.gallery_service.get_gallery(subchannel_id)
+        if not gallery:
+            return {"error": "Subchannel not found"}
+        
+        all_images = self.metadata.get_all_images()
+        gallery_content = self.gallery_service.get_gallery_content(
+            subchannel_id, all_images
+        )
+        
+        if not include_metadata:
+            # Return just the basic list
+            return {
+                "images": [{"id": img["id"]} for img in gallery_content.get("images", [])],
+                "total": gallery_content.get("total", 0),
+                "subchannel": {
+                    "id": gallery.id,
+                    "name": gallery.name,
+                    "imageCount": len(gallery.content_ids)
+                }
+            }
+        else:
+            # Return full metadata
+            return {
+                "images": gallery_content.get("images", []),
+                "total": gallery_content.get("total", 0),
+                "subchannel": {
+                    "id": gallery.id,
+                    "name": gallery.name,
+                    "description": gallery.description,
+                    "imageCount": len(gallery.content_ids),
+                    "created": gallery.created,
+                    "modified": gallery.modified
+                }
+            }
+    
+    def get_subchannel_image_thumbnail(
+        self, 
+        subchannel_id: str, 
+        image_id: str
+    ) -> Optional[str]:
+        """Get thumbnail path for a specific image within a subchannel"""
+        # First verify the image belongs to the subchannel
+        gallery = self.gallery_service.get_gallery(subchannel_id)
+        if not gallery:
+            return None
+        
+        if str(image_id) not in gallery.content_ids:
+            return None
+        
+        # Try to get thumbnail from image service
+        uploads_dir = self.channel_dir / "assets" / "uploads"
+        
+        # Try various thumbnail naming patterns
+        thumbnail_patterns = [
+            f"image_{image_id}.thumb.jpg",
+            f"thumb_{image_id}.jpg",
+            f"{image_id}.thumb.jpg",
+            f"image_{image_id}_thumb.jpg"
+        ]
+        
+        for pattern in thumbnail_patterns:
+            thumbnail_path = uploads_dir / pattern
+            if thumbnail_path.exists():
+                return str(thumbnail_path)
+        
+        # Fallback to original image
+        image_patterns = [
+            f"image_{image_id}.jpg",
+            f"image_{image_id}.png",
+            f"image_{image_id}.jpeg",
+            f"{image_id}.jpg",
+            f"{image_id}.png"
+        ]
+        
+        for pattern in image_patterns:
+            image_path = uploads_dir / pattern
+            if image_path.exists():
+                return str(image_path)
+        
+        return None
+    
+    def get_subchannel_settings(self, subchannel_id: str) -> Dict[str, Any]:
+        """Get subchannel-specific settings - API-compatible method"""
+        try:
+            return self.gallery_service.get_gallery_settings(subchannel_id)
+        except ValueError:
+            # Gallery not found, return default settings
+            return {
+                "order_mode": {"value": "added"},
+                "crop_mode": {"value": "smart_crop"},
+                "update_interval_value": {"value": 30},
+                "update_interval_unit": {"value": "minutes"},
+                "slideshow_enabled": {"value": True},
+                "transition_effect": {"value": "fade"}
+            }
+    
+    def update_subchannel_settings(
+        self, 
+        subchannel_id: str, 
+        settings_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Update subchannel-specific settings - API-compatible method"""
+        try:
+            # Update settings through gallery service
+            self.gallery_service.update_gallery_settings(subchannel_id, settings_data)
+            return {"success": True, "settings": settings_data}
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+    
+    # =============================================================================
+    # Image Management Methods - API-Compatible
+    # =============================================================================
+    
+    def list_images(self) -> List[Dict[str, Any]]:
+        """Get list of all images - API-compatible method"""
+        return self.metadata.get_all_images()
+    
+    def upload_images(
+        self, 
+        files: List[UploadFile], 
+        gallery_id: str = None
+    ) -> Dict[str, Any]:
+        """Upload images to the channel - API-compatible method"""
+        import asyncio
+        import hashlib
+        import time
+        from pathlib import Path
+        
+        # Determine upload directory based on gallery_id
+        if gallery_id:
+            uploads_dir = self.channel_dir / "assets" / "uploads" / gallery_id
+        else:
+            uploads_dir = self.channel_dir / "assets" / "uploads"
+        
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+        results = []
+        
+        for file in files:
+            # Validate file type
+            if not file.content_type or not file.content_type.startswith('image/'):
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": "File is not an image"
+                })
+                continue
+            
+            try:
+                # Read file content synchronously since we're not in an async context
+                content = asyncio.run(file.read()) if hasattr(file, 'read') else file.file.read()
+                if len(content) == 0:
+                    results.append({
+                        "filename": file.filename,
+                        "success": False,
+                        "error": "Empty file"
+                    })
+                    continue
+                
+                # Generate unique filename
+                timestamp = str(int(time.time() * 1000))
+                content_hash = hashlib.md5(content + timestamp.encode()).hexdigest()[:12]
+                
+                # Preserve original extension, default to jpg
+                original_ext = Path(file.filename).suffix.lower() if file.filename else ''
+                if not original_ext or original_ext not in ['.jpg', '.jpeg', '.png', '.gif']:
+                    original_ext = '.jpg'
+                
+                new_filename = f"image_{content_hash}{original_ext}"
+                file_path = uploads_dir / new_filename
+                
+                # Save original file
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                
+                # Generate co-located thumbnail
+                thumbnail_filename = f"image_{content_hash}.thumb.jpg"
+                thumbnail_path = uploads_dir / thumbnail_filename
+                
+                try:
+                    from PIL import Image
+                    
+                    with Image.open(file_path) as img:
+                        # Convert to RGB if necessary
+                        if img.mode in ('RGBA', 'LA', 'P'):
+                            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                            if img.mode == 'P':
+                                img = img.convert('RGBA')
+                            if img.mode in ('RGBA', 'LA'):
+                                rgb_img.paste(img, mask=img.split()[-1])
+                            else:
+                                rgb_img.paste(img)
+                            img = rgb_img
+                        
+                        # Create thumbnail
+                        img.thumbnail((600, 600), Image.Resampling.LANCZOS)
+                        img.save(thumbnail_path, 'JPEG', quality=85, optimize=True)
+                        
+                except ImportError:
+                    pass  # PIL not available
+                except Exception:
+                    pass  # Thumbnail generation failed
+                
+                # Add to metadata system
+                image_data = {
+                    "filename": new_filename,
+                    "original_name": file.filename,
+                    "gallery_id": gallery_id
+                }
+                
+                # Get dimensions if possible
+                try:
+                    from PIL import Image
+                    with Image.open(file_path) as img:
+                        image_data["width"], image_data["height"] = img.size
+                except:
+                    image_data["width"] = 1920
+                    image_data["height"] = 1080
+                
+                image_record = self.metadata.add_image(image_data)
+                
+                results.append({
+                    "filename": new_filename,
+                    "original_name": file.filename,
+                    "success": True,
+                    "image_id": image_record["id"],
+                    "thumbnail": thumbnail_filename if thumbnail_path.exists() else None,
+                    "file_size": len(content)
+                })
+                
+            except Exception as e:
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        return {"results": results}
+    
+    def delete_image(self, image_id: str) -> Dict[str, Any]:
+        """Delete an image from the channel - API-compatible method"""
+        try:
+            # Get image info before deletion
+            image = self.metadata.get_image_by_id(image_id)
+            if not image:
+                return {"success": False, "error": "Image not found"}
+            
+            # Remove from filesystem
+            uploads_dir = self.channel_dir / "assets" / "uploads"
+            image_path = uploads_dir / image["filename"]
+            
+            if image_path.exists():
+                image_path.unlink()
+            
+            # Remove thumbnail if it exists
+            thumbnail_patterns = [
+                f"image_{image_id}.thumb.jpg",
+                f"thumb_{image_id}.jpg",
+                f"{image_id}.thumb.jpg"
+            ]
+            
+            for pattern in thumbnail_patterns:
+                thumb_path = uploads_dir / pattern
+                if thumb_path.exists():
+                    thumb_path.unlink()
+                    break
+            
+            # Remove from metadata
+            self.metadata.delete_image(image_id)
+            
+            return {"success": True}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
     def reorder_gallery_images(self, gallery_id: str, dragged_id: str, target_id: str) -> bool:
         """Reorder images in a gallery by delegating to the GalleryService"""
