@@ -39,7 +39,7 @@ class SettingsRoutes:
         
     def create_router(self) -> APIRouter:
         """Create and configure the settings router"""
-        router = APIRouter(prefix="/settings", tags=["settings"])
+        router = APIRouter(prefix="/internal/settings", tags=["internal-settings"])
         
         @router.get("")
         async def get_settings():
