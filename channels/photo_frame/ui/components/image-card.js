@@ -120,6 +120,7 @@ class ImageCard extends HTMLElement {
     // Use new thumbnail format: basename.thumb.jpg
     const baseName = this.image.filename.split('.')[0];
     const thumbnailUrl = `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${baseName}.thumb.jpg`;
+    const originalUrl = `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${this.image.filename}`;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -155,11 +156,28 @@ class ImageCard extends HTMLElement {
           width: 100%;
           height: 150px;
           background-color: #e9ecef;
+          position: relative;
         }
         .image-thumbnail img {
           width: 100%;
           height: 100%;
           object-fit: cover;
+        }
+        .thumbnail-fallback {
+          display: none;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .thumbnail-placeholder {
+          display: none;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(135deg, #e9ecef 0%, #f8f9fa 100%);
+          align-items: center;
+          justify-content: center;
+          color: #6c757d;
+          font-size: 2rem;
         }
         .image-info {
           padding: 8px;
@@ -230,7 +248,11 @@ class ImageCard extends HTMLElement {
       </style>
       <div class="image-card" draggable="true">
         <div class="image-thumbnail">
-          <img src="${thumbnailUrl}" alt="${this.image.filename}" />
+          <img class="thumbnail-primary" src="${thumbnailUrl}" alt="${this.image.filename}" 
+               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <img class="thumbnail-fallback" src="${originalUrl}" alt="${this.image.filename}"
+               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+          <div class="thumbnail-placeholder">🖼️</div>
         </div>
         <div class="image-info">
           <div class="image-filename">${this.escapeHtml(this.image.filename)}</div>
