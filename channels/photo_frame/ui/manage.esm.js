@@ -50,8 +50,8 @@ class XPhotoFrameManager extends HTMLElement {
       const imagesData = imagesRes.ok ? await imagesRes.json() : [];
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
 
-      // Extract galleries from the subChannels property
-      this.state.galleries = Array.isArray(galleriesData?.subChannels) ? galleriesData.subChannels : [];
+      // Extract galleries from the subchannels property (note: lowercase 'c')
+      this.state.galleries = Array.isArray(galleriesData?.subchannels) ? galleriesData.subchannels : [];
       this.state.allImages = Array.isArray(imagesData) ? imagesData : [];
       this.state.settings = settingsData || {};
 
@@ -983,7 +983,7 @@ class XPhotoFrameManager extends HTMLElement {
           const galleriesData = await galleriesRes.json();
           console.log('Fresh galleries data received:', galleriesData);
           
-          this.state.galleries = Array.isArray(galleriesData?.subChannels) ? galleriesData.subChannels : [];
+          this.state.galleries = Array.isArray(galleriesData?.subchannels) ? galleriesData.subchannels : [];
           
           // Find the updated gallery
           const updatedGallery = this.state.galleries.find(g => g.id === galleryId);
