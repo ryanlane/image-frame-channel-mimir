@@ -87,14 +87,12 @@ except ImportError:
 # Handle imports for both standalone and platform usage
 try:
     from utils.image_processor import ImageProcessor
-    from utils.database import PhotoFrameDB
     from utils.file_metadata import FileMetadataManager
 except ImportError:
     # Fallback for standalone testing
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
     from utils.image_processor import ImageProcessor
-    from utils.database import PhotoFrameDB
     from utils.file_metadata import FileMetadataManager
 
 # BaseChannel interface for Mimir Platform integration
@@ -184,10 +182,7 @@ class PhotoFrameChannel(BaseChannel):
         # Validate critical paths for API integration
         self._validate_api_integration()
         
-        # Initialize components
-        # Keep database for settings only
-        self.db = PhotoFrameDB(self.channel_dir / "data" / "photo_frame.db")
-        
+        # Initialize components - Pure JSON storage
         # Use file-based metadata for images
         self.metadata = FileMetadataManager(self.channel_dir / "assets" / "uploads")
         
@@ -425,7 +420,7 @@ class PhotoFrameChannel(BaseChannel):
             "current_image_id": self.current_image_id,
             "total_images": image_count,
             "enabled_images": enabled_count,
-            "database_ok": self.db.check_health(),
+            "metadata_system": "file_based_json",
             "storage_usage": self._get_storage_usage()
         }
     
@@ -444,7 +439,7 @@ class PhotoFrameChannel(BaseChannel):
         ))
         router.include_router(create_settings_router(
             self.gallery_service, self.storage_service, self.settings_manager, 
-            self.db, self._config
+            self._config
         ))
         router.include_router(create_subchannel_settings_router(
             self.gallery_service, self.settings_manager

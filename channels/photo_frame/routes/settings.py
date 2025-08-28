@@ -31,11 +31,10 @@ class SettingsRoutes:
     """Settings routes class with dependency injection"""
     
     def __init__(self, gallery_service: GalleryService, storage_service: StorageService, 
-                 settings_manager: SettingsManager, db, config):
+                 settings_manager: SettingsManager, config):
         self.gallery_service = gallery_service
         self.storage_service = storage_service
         self.settings_manager = settings_manager
-        self.db = db
         self._config = config
         
     def create_router(self) -> APIRouter:
@@ -46,9 +45,15 @@ class SettingsRoutes:
         async def get_settings():
             """Get current photo frame configuration"""
             try:
-                # Get settings from database or use defaults
-                settings = self.db.get_settings()
-                if not settings:
+                # Get settings from JSON file or use defaults
+                settings_file = self.storage_service.channel_dir / "data" / "settings.json"
+                if settings_file.exists():
+                    import json
+                    with open(settings_file, 'r') as f:
+                        settings = json.load(f)
+                else:
+                    # Use defaults from config
+                    settings = self._config.get("settings", {}).get("defaults", {})
                     # Return defaults from config if no settings stored
                     settings = self._config.get("settings", {}).get("defaults", {})
                 
@@ -94,8 +99,12 @@ class SettingsRoutes:
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
                 
-                # Save to database
-                self.db.update_settings(validated_settings.dict())
+                # Save to JSON file
+                settings_file = self.storage_service.channel_dir / "data" / "settings.json"
+                settings_file.parent.mkdir(parents=True, exist_ok=True)
+                import json
+                with open(settings_file, 'w', encoding='utf-8') as f:
+                    json.dump(validated_settings.dict(), f, indent=2)
                 
                 return JSONResponse({"success": True})
                 
@@ -257,9 +266,9 @@ class SubchannelSettingsRoutes:
 
 # Factory functions for creating routers with dependencies
 def create_settings_router(gallery_service: GalleryService, storage_service: StorageService, 
-                          settings_manager: SettingsManager, db, config) -> APIRouter:
+                          settings_manager: SettingsManager, config) -> APIRouter:
     """Factory function to create settings router with injected dependencies"""
-    routes = SettingsRoutes(gallery_service, storage_service, settings_manager, db, config)
+    routes = SettingsRoutes(gallery_service, storage_service, settings_manager, config)
     return routes.create_router()
 
 

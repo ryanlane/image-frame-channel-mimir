@@ -68,7 +68,7 @@ class FileMetadataManager:
         
         # Save metadata file
         meta_path = self._get_meta_path(filename)
-        with open(meta_path, 'w') as f:
+        with open(meta_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2)
         
         return image_id
@@ -87,7 +87,7 @@ class FileMetadataManager:
             return None
         
         try:
-            with open(meta_path, 'r') as f:
+            with open(meta_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return None
@@ -99,7 +99,7 @@ class FileMetadataManager:
         # Find all .meta files
         for meta_path in self.uploads_dir.glob("*.meta"):
             try:
-                with open(meta_path, 'r') as f:
+                with open(meta_path, 'r', encoding='utf-8') as f:
                     metadata = json.load(f)
                     
                 # Check if the corresponding image file exists
@@ -133,7 +133,7 @@ class FileMetadataManager:
         
         # Save updated metadata
         try:
-            with open(meta_path, 'w') as f:
+            with open(meta_path, 'w', encoding='utf-8') as f:
                 json.dump(current_image, f, indent=2)
             return True
         except Exception as e:
