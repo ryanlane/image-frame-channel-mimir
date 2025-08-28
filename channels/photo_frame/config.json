@@ -5,6 +5,7 @@
   "description": "Digital photo frame with intelligent cropping and slideshow management",
   "version": "1.0.0",
   "author": "Ryan Lane",
+  "settingsType": "advanced",
   "update_schedule": {
     "unit": "minutes",
     "duration": 15,
