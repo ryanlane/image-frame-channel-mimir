@@ -972,23 +972,17 @@ class PhotoFrameChannel(BaseChannel):
         """Get list of all images - API-compatible method"""
         return self.metadata.get_all_images()
     
-    def upload_images(
+    async def upload_images(
         self, 
-        files: List[UploadFile], 
-        gallery_id: str = None
+        files: List[UploadFile]
     ) -> Dict[str, Any]:
         """Upload images to the channel - API-compatible method"""
-        import asyncio
         import hashlib
         import time
         from pathlib import Path
         
-        # Determine upload directory based on gallery_id
-        if gallery_id:
-            uploads_dir = self.channel_dir / "assets" / "uploads" / gallery_id
-        else:
-            uploads_dir = self.channel_dir / "assets" / "uploads"
-        
+        # Use the root uploads directory for generic API uploads
+        uploads_dir = self.channel_dir / "assets" / "uploads"
         uploads_dir.mkdir(parents=True, exist_ok=True)
         
         results = []
@@ -1004,8 +998,8 @@ class PhotoFrameChannel(BaseChannel):
                 continue
             
             try:
-                # Read file content synchronously since we're not in an async context
-                content = asyncio.run(file.read()) if hasattr(file, 'read') else file.file.read()
+                # Read file content asynchronously
+                content = await file.read()
                 if len(content) == 0:
                     results.append({
                         "filename": file.filename,
@@ -1061,8 +1055,7 @@ class PhotoFrameChannel(BaseChannel):
                 # Add to metadata system
                 image_data = {
                     "filename": new_filename,
-                    "original_name": file.filename,
-                    "gallery_id": gallery_id
+                    "original_name": file.filename
                 }
                 
                 # Get dimensions if possible

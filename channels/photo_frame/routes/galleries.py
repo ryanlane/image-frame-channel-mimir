@@ -19,7 +19,8 @@ The main API expects these endpoints:
 - GET /api/channels/{channel_id}/subchannels/{subchannel_id}/images
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from typing import List
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse
 
 # Import dependencies that will be injected
@@ -253,6 +254,53 @@ class GalleryRoutes:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get gallery images: {str(e)}")
+
+        @router.post("/{gallery_id}/upload")
+        async def upload_images_to_gallery(gallery_id: str, files: List[UploadFile] = File(...)):
+            """Upload images directly to a specific gallery"""
+            try:
+                # Verify gallery exists first
+                gallery = self.gallery_service.get_gallery(gallery_id)
+                if not gallery:
+                    raise HTTPException(status_code=404, detail="Gallery not found")
+                
+                # Upload the files using the image service
+                result = self.image_service.upload_files(files)
+                
+                # If uploads were successful, assign them to the gallery
+                if result.successful_uploads > 0:
+                    successful_image_ids = [
+                        r.image_id for r in result.results 
+                        if r.success and r.image_id
+                    ]
+                    
+                    if successful_image_ids:
+                        assign_result = await self.gallery_service.assign_images_to_gallery(
+                            gallery_id, successful_image_ids
+                        )
+                
+                return JSONResponse({
+                    "success": True,
+                    "uploaded_count": result.successful_uploads,
+                    "failed_count": result.failed_uploads,
+                    "gallery_id": gallery_id,
+                    "gallery_name": gallery.name,
+                    "results": [
+                        {
+                            "filename": r.filename,
+                            "success": r.success,
+                            "image_id": r.image_id,
+                            "error": r.error,
+                            "assigned_to_gallery": r.success and r.image_id is not None
+                        }
+                        for r in result.results
+                    ]
+                })
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Gallery upload failed: {str(e)}")
 
         @router.post("/{gallery_id}/images")
         async def assign_images_to_gallery(gallery_id: str, request: Request):
