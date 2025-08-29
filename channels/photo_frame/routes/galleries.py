@@ -68,9 +68,9 @@ class GalleryRoutes:
                         "name": gallery.name,
                         "description": gallery.description,
                         "image_count": len(gallery.content_ids),
-                        "settings": gallery.settings,
-                        "created_at": gallery.created_at.isoformat() if gallery.created_at else None,
-                        "updated_at": gallery.updated_at.isoformat() if gallery.updated_at else None
+                        "settings": gallery.display_settings,
+                        "created_at": gallery.created,
+                        "updated_at": gallery.modified
                     }
                     for gallery in galleries
                 ])
@@ -96,7 +96,7 @@ class GalleryRoutes:
                         "id": gallery.id,
                         "name": gallery.name,
                         "description": gallery.description,
-                        "created_at": gallery.created_at.isoformat() if gallery.created_at else None
+                        "created_at": gallery.created
                     }
                 })
                 
@@ -120,9 +120,9 @@ class GalleryRoutes:
                     "description": gallery.description,
                     "content_ids": gallery.content_ids,
                     "image_count": len(gallery.content_ids),
-                    "settings": gallery.settings,
-                    "created_at": gallery.created_at.isoformat() if gallery.created_at else None,
-                    "updated_at": gallery.updated_at.isoformat() if gallery.updated_at else None
+                    "settings": gallery.display_settings,
+                    "created_at": gallery.created,
+                    "updated_at": gallery.modified
                 })
                 
             except HTTPException:
@@ -151,7 +151,7 @@ class GalleryRoutes:
                         "id": gallery.id,
                         "name": gallery.name,
                         "description": gallery.description,
-                        "updated_at": gallery.updated_at.isoformat() if gallery.updated_at else None
+                        "updated_at": gallery.modified
                     }
                 })
                 
