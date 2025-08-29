@@ -1187,13 +1187,13 @@ class PhotoFrameChannel(BaseChannel):
             
             # Get random image from specified gallery or default
             if gallery_id:
-                images = self.gallery_service.get_gallery_images(gallery_id)
+                # Use existing method to get gallery content
+                all_images = self.metadata.get_all_images()
+                gallery_content = self.gallery_service.get_gallery_content(gallery_id, all_images)
+                images = gallery_content.get("content", [])
             else:
-                # Get images from all galleries
-                all_galleries = self.gallery_service.get_galleries()
-                images = []
-                for gallery in all_galleries:
-                    images.extend(gallery.get("images", []))
+                # Get all images from metadata service
+                images = self.metadata.get_all_images()
             
             if not images:
                 return {
@@ -1247,8 +1247,9 @@ class PhotoFrameChannel(BaseChannel):
             Status dictionary with health and statistics
         """
         try:
-            galleries = self.gallery_service.get_galleries()
-            total_images = sum(len(gallery.get("images", [])) for gallery in galleries)
+            galleries = self.gallery_service.get_all_galleries()
+            all_images = self.metadata.get_all_images()
+            total_images = len(all_images)
             
             return {
                 "active": True,
@@ -1260,9 +1261,9 @@ class PhotoFrameChannel(BaseChannel):
                 "totalImages": total_images,
                 "availableGalleries": [
                     {
-                        "id": gallery["id"],
-                        "name": gallery["name"],
-                        "image_count": len(gallery.get("images", []))
+                        "id": gallery.id,
+                        "name": gallery.name,
+                        "image_count": gallery.image_count
                     } for gallery in galleries[:5]  # Limit for performance
                 ]
             }
