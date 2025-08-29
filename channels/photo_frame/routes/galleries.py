@@ -205,12 +205,16 @@ class GalleryRoutes:
                 # Use the gallery service to assign content
                 if action == "add":
                     result = self.gallery_service.assign_images_to_gallery(
-                        gallery_id, content_ids, all_image_ids=set(content_ids)
+                        gallery_id, content_ids, action="add", valid_image_ids=set(content_ids)
                     )
                 elif action == "remove":
-                    result = self.gallery_service.remove_images_from_gallery(gallery_id, content_ids)
+                    result = self.gallery_service.assign_images_to_gallery(
+                        gallery_id, content_ids, action="remove"
+                    )
                 else:  # replace
-                    result = self.gallery_service.replace_gallery_images(gallery_id, content_ids)
+                    result = self.gallery_service.assign_images_to_gallery(
+                        gallery_id, content_ids, action="set"
+                    )
                 
                 return JSONResponse({
                     "success": True,
