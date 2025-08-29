@@ -1269,14 +1269,7 @@ class PhotoFrameChannel(BaseChannel):
                 "lastError": None,
                 "version": "1.0.0",
                 "galleries": len(galleries),
-                "totalImages": total_images,
-                "availableGalleries": [
-                    {
-                        "id": gallery.id,
-                        "name": gallery.name,
-                        "image_count": gallery.image_count
-                    } for gallery in galleries[:5]  # Limit for performance
-                ]
+                "totalImages": total_images
             }
         except Exception as e:
             return {
@@ -1286,8 +1279,7 @@ class PhotoFrameChannel(BaseChannel):
                 "lastError": str(e),
                 "version": "1.0.0",
                 "galleries": 0,
-                "totalImages": 0,
-                "availableGalleries": []
+                "totalImages": 0
             }
 
 # Export the channel class for embedded plugin discovery
