@@ -52,6 +52,37 @@ class XPhotoFrameManager extends HTMLElement {
 
       // The subchannels endpoint returns an array directly
       this.state.galleries = Array.isArray(galleriesData) ? galleriesData : [];
+      
+      // For each gallery, we need to fetch the individual gallery details to get content_ids
+      // since the list endpoint doesn't include them
+      if (this.state.galleries.length > 0) {
+        const galleryDetailsPromises = this.state.galleries.map(gallery =>
+          fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, { credentials: 'include' })
+            .then(res => res.ok ? res.json() : null)
+            .catch(() => null)
+        );
+        
+        const galleryDetails = await Promise.all(galleryDetailsPromises);
+        
+        // Merge the detailed data back into galleries
+        this.state.galleries = this.state.galleries.map((gallery, index) => {
+          const details = galleryDetails[index];
+          if (details) {
+            // Convert snake_case to camelCase for consistency
+            return {
+              ...gallery,
+              contentIds: details.content_ids || [],
+              coverImageId: details.cover_image_id || null
+            };
+          }
+          return {
+            ...gallery,
+            contentIds: [],
+            coverImageId: null
+          };
+        });
+      }
+      
       this.state.allImages = Array.isArray(imagesData) ? imagesData : [];
       this.state.settings = settingsData || {};
 
@@ -1067,6 +1098,34 @@ class XPhotoFrameManager extends HTMLElement {
           console.log('Fresh galleries data received:', galleriesData);
           
           this.state.galleries = Array.isArray(galleriesData) ? galleriesData : [];
+          
+          // For galleries involved in reordering, fetch the detailed content_ids
+          if (this.state.galleries.length > 0) {
+            const galleryDetailsPromises = this.state.galleries.map(gallery =>
+              fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`, { credentials: 'include' })
+                .then(res => res.ok ? res.json() : null)
+                .catch(() => null)
+            );
+            
+            const galleryDetails = await Promise.all(galleryDetailsPromises);
+            
+            // Merge the detailed data back into galleries
+            this.state.galleries = this.state.galleries.map((gallery, index) => {
+              const details = galleryDetails[index];
+              if (details) {
+                return {
+                  ...gallery,
+                  contentIds: details.content_ids || [],
+                  coverImageId: details.cover_image_id || null
+                };
+              }
+              return {
+                ...gallery,
+                contentIds: [],
+                coverImageId: null
+              };
+            });
+          }
           
           // Find the updated gallery
           const updatedGallery = this.state.galleries.find(g => g.id === galleryId);
