@@ -88,7 +88,7 @@ class GalleryRoutes:
                 gallery_data = GalleryCreate(**data)
                 
                 # Create gallery using service
-                gallery = await self.gallery_service.create_gallery(gallery_data)
+                gallery = self.gallery_service.create_gallery(gallery_data)
                 
                 return JSONResponse({
                     "success": True,
@@ -109,7 +109,7 @@ class GalleryRoutes:
         async def get_gallery(gallery_id: str):
             """Get a specific gallery with its images"""
             try:
-                gallery = await self.gallery_service.get_gallery(gallery_id)
+                gallery = self.gallery_service.get_gallery(gallery_id)
                 
                 if not gallery:
                     raise HTTPException(status_code=404, detail="Gallery not found")
@@ -140,7 +140,7 @@ class GalleryRoutes:
                 update_data = GalleryUpdate(**data)
                 
                 # Update gallery using service
-                gallery = await self.gallery_service.update_gallery(gallery_id, update_data)
+                gallery = self.gallery_service.update_gallery(gallery_id, update_data)
                 
                 if not gallery:
                     raise HTTPException(status_code=404, detail="Gallery not found")
@@ -166,7 +166,7 @@ class GalleryRoutes:
         async def delete_gallery(gallery_id: str):
             """Delete a gallery (images remain in system)"""
             try:
-                success = await self.gallery_service.delete_gallery(gallery_id)
+                success = self.gallery_service.delete_gallery(gallery_id)
                 
                 if not success:
                     raise HTTPException(status_code=404, detail="Gallery not found")
@@ -275,7 +275,7 @@ class GalleryRoutes:
                     ]
                     
                     if successful_image_ids:
-                        assign_result = await self.gallery_service.assign_images_to_gallery(
+                        assign_result = self.gallery_service.assign_images_to_gallery(
                             gallery_id, successful_image_ids
                         )
                 
@@ -313,7 +313,7 @@ class GalleryRoutes:
                     raise HTTPException(status_code=400, detail="image_ids array required")
                 
                 # Assign images using service
-                result = await self.gallery_service.assign_images_to_gallery(gallery_id, image_ids)
+                result = self.gallery_service.assign_images_to_gallery(gallery_id, image_ids)
                 
                 return JSONResponse({
                     "success": True,
@@ -331,7 +331,8 @@ class GalleryRoutes:
         async def remove_image_from_gallery(gallery_id: str, image_id: str):
             """Remove an image from a gallery"""
             try:
-                success = await self.gallery_service.remove_image_from_gallery(gallery_id, image_id)
+                # Use assign_images_to_gallery with "remove" action
+                success = self.gallery_service.assign_images_to_gallery(gallery_id, [image_id], action="remove")
                 
                 if not success:
                     raise HTTPException(status_code=404, detail="Gallery or image not found")
