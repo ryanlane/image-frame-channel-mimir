@@ -1139,7 +1139,7 @@ class PhotoFrameChannel(BaseChannel):
             Dictionary with channel capabilities and configuration
         """
         try:
-            galleries = self.gallery_service.get_galleries()
+            galleries = self.gallery_service.get_all_galleries()
             
             return {
                 "id": "com.epaperframe.photoframe",
@@ -1155,9 +1155,9 @@ class PhotoFrameChannel(BaseChannel):
                 },
                 "galleries": [
                     {
-                        "id": gallery["id"],
-                        "name": gallery["name"], 
-                        "image_count": len(gallery.get("images", []))
+                        "id": gallery.id,
+                        "name": gallery.name, 
+                        "image_count": gallery.image_count
                     } for gallery in galleries
                 ],
                 "status": self.get_status()
