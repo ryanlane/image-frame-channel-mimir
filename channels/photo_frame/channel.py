@@ -1207,7 +1207,7 @@ class PhotoFrameChannel(BaseChannel):
             selected_image = random.choice(images)
             
             # Get image file path
-            image_path = self.storage_service.get_upload_path() / selected_image["filename"]
+            image_path = self.storage_service.uploads_dir / selected_image["filename"]
             
             if not image_path.exists():
                 return {
