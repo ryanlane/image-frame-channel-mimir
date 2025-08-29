@@ -42,7 +42,7 @@ class XPhotoFrameManager extends HTMLElement {
       const [galleriesRes, imagesRes, settingsRes] = await Promise.all([
         fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels`, { credentials: 'include' }),
         fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images`, { credentials: 'include' }),
-        fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/settings`, { credentials: 'include' })
+        fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/internal/settings`, { credentials: 'include' })
       ]);
 
       // Parse responses with error handling
