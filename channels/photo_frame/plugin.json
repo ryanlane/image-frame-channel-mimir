@@ -1,0 +1,23 @@
+{
+  "id": "com.epaperframe.photoframe",
+  "name": "Photo Frame",
+  "description": "Gallery-based photo slideshow with intelligent image management",
+  "version": "1.0.0",
+  "service_url": "http://localhost:8001",
+  "icon": "/assets/icon.png",
+  "author": "Mimir Platform",
+  "tags": ["photo", "gallery", "slideshow", "display"],
+  "requirements": {
+    "python": ">=3.8",
+    "dependencies": ["fastapi", "pillow", "sqlalchemy"]
+  },
+  "endpoints": {
+    "health": "/health",
+    "manifest": "/manifest", 
+    "request_image": "/request_image"
+  },
+  "static_assets": {
+    "ui": "/ui",
+    "assets": "/assets"
+  }
+}
