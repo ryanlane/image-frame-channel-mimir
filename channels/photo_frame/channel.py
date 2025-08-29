@@ -1153,6 +1153,17 @@ class PhotoFrameChannel(BaseChannel):
                     "image_formats": ["jpg", "jpeg", "png", "gif"],
                     "max_file_size": "10MB"
                 },
+                "ui": {
+                    "entry_point": "/api/channels/com.epaperframe.photoframe/ui/index.html",
+                    "components": {
+                        "manager": "/api/channels/com.epaperframe.photoframe/ui/manage.esm.js",
+                        "gallery_card": "/api/channels/com.epaperframe.photoframe/ui/components/gallery-card.js",
+                        "image_card": "/api/channels/com.epaperframe.photoframe/ui/components/image-card.js"
+                    },
+                    "styles": "/api/channels/com.epaperframe.photoframe/ui/styles.css",
+                    "icon": "🖼️",
+                    "title": "Photo Frame Manager"
+                },
                 "galleries": [
                     {
                         "id": gallery.id,
