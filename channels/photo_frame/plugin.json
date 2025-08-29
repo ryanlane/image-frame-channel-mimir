@@ -1,23 +1,44 @@
 {
   "id": "com.epaperframe.photoframe",
-  "name": "Photo Frame",
+  "name": "Photo Frame Channel",
   "description": "Gallery-based photo slideshow with intelligent image management",
   "version": "1.0.0",
-  "service_url": "http://localhost:8001",
-  "icon": "/assets/icon.png",
+  "type": "embedded",
+  "entry_point": "channel.py",
+  "class_name": "PhotoFrameChannel",
+  "icon": "photo",
   "author": "Mimir Platform",
   "tags": ["photo", "gallery", "slideshow", "display"],
+  "config": {
+    "supports_upload": true,
+    "supports_gallery": true,
+    "image_formats": ["jpg", "jpeg", "png", "gif"],
+    "max_file_size": "10MB"
+  },
   "requirements": {
     "python": ">=3.8",
     "dependencies": ["fastapi", "pillow", "sqlalchemy"]
   },
-  "endpoints": {
-    "health": "/health",
-    "manifest": "/manifest", 
-    "request_image": "/request_image"
-  },
-  "static_assets": {
-    "ui": "/ui",
-    "assets": "/assets"
-  }
+  "endpoints": [
+    {
+      "path": "/manifest",
+      "method": "GET",
+      "description": "Get channel manifest and capabilities"
+    },
+    {
+      "path": "/request_image", 
+      "method": "POST",
+      "description": "Request a random image from the gallery"
+    },
+    {
+      "path": "/upload",
+      "method": "POST",
+      "description": "Upload new images to the gallery"
+    },
+    {
+      "path": "/gallery",
+      "method": "GET",
+      "description": "List all images in the gallery"
+    }
+  ]
 }

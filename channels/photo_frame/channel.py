@@ -1126,3 +1126,157 @@ class PhotoFrameChannel(BaseChannel):
     def reorder_gallery_images(self, gallery_id: str, dragged_id: str, target_id: str) -> bool:
         """Reorder images in a gallery by delegating to the GalleryService"""
         return self.gallery_service.reorder_gallery_images(gallery_id, dragged_id, target_id)
+
+    # =========================================================================
+    # Embedded Plugin Interface - Required for Mimir Plugin Architecture
+    # =========================================================================
+    
+    def get_manifest(self) -> Dict[str, Any]:
+        """
+        Get channel manifest with capabilities for embedded plugin architecture
+        
+        Returns:
+            Dictionary with channel capabilities and configuration
+        """
+        try:
+            galleries = self.gallery_service.get_galleries()
+            
+            return {
+                "id": "com.epaperframe.photoframe",
+                "name": "Photo Frame Channel", 
+                "version": "1.0.0",
+                "description": "Gallery-based photo slideshow with intelligent image management",
+                "capabilities": {
+                    "supports_upload": True,
+                    "supports_gallery": True,
+                    "supports_randomization": True,
+                    "image_formats": ["jpg", "jpeg", "png", "gif"],
+                    "max_file_size": "10MB"
+                },
+                "galleries": [
+                    {
+                        "id": gallery["id"],
+                        "name": gallery["name"], 
+                        "image_count": len(gallery.get("images", []))
+                    } for gallery in galleries
+                ],
+                "status": self.get_status()
+            }
+        except Exception as e:
+            return {
+                "id": "com.epaperframe.photoframe",
+                "name": "Photo Frame Channel",
+                "error": str(e),
+                "healthy": False
+            }
+    
+    async def request_image(self, request_data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Generate a random image for display (embedded plugin interface)
+        
+        Args:
+            request_data: Optional request parameters
+            
+        Returns:
+            Dictionary with image data or error information
+        """
+        try:
+            # Get settings from request data
+            settings = request_data.get("settings", {}) if request_data else {}
+            gallery_id = request_data.get("gallery_id") if request_data else None
+            
+            # Get random image from specified gallery or default
+            if gallery_id:
+                images = self.gallery_service.get_gallery_images(gallery_id)
+            else:
+                # Get images from all galleries
+                all_galleries = self.gallery_service.get_galleries()
+                images = []
+                for gallery in all_galleries:
+                    images.extend(gallery.get("images", []))
+            
+            if not images:
+                return {
+                    "success": False,
+                    "error": "No images available",
+                    "message": "Please upload images to use this channel"
+                }
+            
+            # Select random image
+            import random
+            selected_image = random.choice(images)
+            
+            # Get image file path
+            image_path = self.storage_service.get_upload_path() / selected_image["filename"]
+            
+            if not image_path.exists():
+                return {
+                    "success": False,
+                    "error": "Selected image file not found",
+                    "filename": selected_image["filename"]
+                }
+            
+            # Encode image as base64
+            import base64
+            with open(image_path, 'rb') as f:
+                image_data = f.read()
+                image_b64 = base64.b64encode(image_data).decode('utf-8')
+            
+            return {
+                "success": True,
+                "image": image_b64,
+                "filename": selected_image["filename"],
+                "image_id": selected_image["id"],
+                "gallery_id": selected_image.get("gallery_id"),
+                "total_images": len(images),
+                "message": f"Selected {selected_image['filename']} from {len(images)} images"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to generate image: {str(e)}"
+            }
+    
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get current channel status (embedded plugin interface)
+        
+        Returns:
+            Status dictionary with health and statistics
+        """
+        try:
+            galleries = self.gallery_service.get_galleries()
+            total_images = sum(len(gallery.get("images", [])) for gallery in galleries)
+            
+            return {
+                "active": True,
+                "healthy": True,
+                "lastUpdate": datetime.now().isoformat(),
+                "lastError": None,
+                "version": "1.0.0",
+                "galleries": len(galleries),
+                "totalImages": total_images,
+                "availableGalleries": [
+                    {
+                        "id": gallery["id"],
+                        "name": gallery["name"],
+                        "image_count": len(gallery.get("images", []))
+                    } for gallery in galleries[:5]  # Limit for performance
+                ]
+            }
+        except Exception as e:
+            return {
+                "active": False,
+                "healthy": False,
+                "lastUpdate": datetime.now().isoformat(),
+                "lastError": str(e),
+                "version": "1.0.0",
+                "galleries": 0,
+                "totalImages": 0,
+                "availableGalleries": []
+            }
+
+# Export the channel class for embedded plugin discovery
+ChannelClass = PhotoFrameChannel
