@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Frame Gallery Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+        }
+        
+        .loading h2 {
+            margin-bottom: 16px;
+            color: #495057;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+            color: #dc3545;
+        }
+        
+        .error h2 {
+            margin-bottom: 16px;
+        }
+        
+        .error p {
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        
+        .btn-retry {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        
+        .btn-retry:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">
+        <h2>🖼️ Loading Photo Frame Manager</h2>
+        <div class="spinner"></div>
+    </div>
+    
+    <div id="error" class="error" style="display: none;">
+        <h2>❌ Failed to Load</h2>
+        <p>Unable to load the Photo Frame Manager. Please check your connection and try again.</p>
+        <button class="btn-retry" onclick="location.reload()">Retry</button>
+    </div>
+    
+    <x-photo-frame-manager id="manager" style="display: none;"></x-photo-frame-manager>
+    
+    <script type="module">
+        // Set the base URL for API calls
+        window.mimirServerBaseUrl = window.location.origin;
+        
+        // Import the gallery components
+        try {
+            await import('./components/gallery-card.js');
+            await import('./components/image-card.js');
+            await import('./manage.esm.js');
+            
+            // Hide loading, show manager
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('manager').style.display = 'block';
+            
+            console.log('Photo Frame Manager loaded successfully');
+        } catch (error) {
+            console.error('Failed to load Photo Frame Manager:', error);
+            
+            // Show error state
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
