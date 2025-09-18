@@ -1314,38 +1314,6 @@ class PhotoFrameChannel(BaseChannel):
         # For now, use random selection - could be enhanced to use settings
         import random
         return random.choice(images) if images else None
-    
-    def get_status(self) -> Dict[str, Any]:
-        """
-        Get current channel status (embedded plugin interface)
-        
-        Returns:
-            Status dictionary with health and statistics
-        """
-        try:
-            galleries = self.gallery_service.get_all_galleries()
-            all_images = self.metadata.get_all_images()
-            total_images = len(all_images)
-            
-            return {
-                "active": True,
-                "healthy": True,
-                "lastUpdate": datetime.now().isoformat(),
-                "lastError": None,
-                "version": "1.0.0",
-                "galleries": len(galleries),
-                "totalImages": total_images
-            }
-        except Exception as e:
-            return {
-                "active": False,
-                "healthy": False,
-                "lastUpdate": datetime.now().isoformat(),
-                "lastError": str(e),
-                "version": "1.0.0",
-                "galleries": 0,
-                "totalImages": 0
-            }
 
 # Export the channel class for embedded plugin discovery
 ChannelClass = PhotoFrameChannel
