@@ -198,6 +198,9 @@ class PhotoFrameChannel(BaseChannel):
         self.last_error = None
         self.current_image_id = None
         
+        # Distribution state tracking - maps gallery_id to last selected image_id
+        self._last_selected_by_gallery = {}
+        
         # NEW: Initialize services for improved architecture
         self.settings_manager = SettingsManager()  # Add missing settings manager
         self.gallery_service = GalleryService(self.channel_dir)
@@ -1186,8 +1189,10 @@ class PhotoFrameChannel(BaseChannel):
         Generate a random image for display (embedded plugin interface)
         
         Args:
-            request_data: Optional request parameters
-            
+            request_data: Optional request parameters including:
+                - gallery_id: Gallery to select from
+                - settings: Display settings including distribution mode
+                
         Returns:
             Dictionary with image data or error information
         """
@@ -1196,7 +1201,12 @@ class PhotoFrameChannel(BaseChannel):
             settings = request_data.get("settings", {}) if request_data else {}
             gallery_id = request_data.get("gallery_id") if request_data else None
             
-            # Get random image from specified gallery or default
+            # Extract distribution mode from settings (default to "new")
+            distribution_mode = settings.get("distribution", "new")
+            if distribution_mode not in ["current", "new"]:
+                distribution_mode = "new"  # Fallback to safe default
+            
+            # Get images from specified gallery or all images
             if gallery_id:
                 # Use existing method to get gallery content
                 all_images = self.metadata.get_all_images()
@@ -1213,9 +1223,17 @@ class PhotoFrameChannel(BaseChannel):
                     "message": "Please upload images to use this channel"
                 }
             
-            # Select random image
-            import random
-            selected_image = random.choice(images)
+            # Select image based on distribution mode
+            selected_image = self._select_image_by_distribution(
+                images, distribution_mode, gallery_id or "default"
+            )
+            
+            if not selected_image:
+                return {
+                    "success": False,
+                    "error": "No suitable image found",
+                    "message": "Image selection failed"
+                }
             
             # Get image file path
             image_path = self.storage_service.uploads_dir / selected_image["filename"]
@@ -1233,6 +1251,9 @@ class PhotoFrameChannel(BaseChannel):
                 image_data = f.read()
                 image_b64 = base64.b64encode(image_data).decode('utf-8')
             
+            # Update state tracking for future "current" requests
+            self._last_selected_by_gallery[gallery_id or "default"] = selected_image["id"]
+            
             return {
                 "success": True,
                 "image": image_b64,
@@ -1240,7 +1261,8 @@ class PhotoFrameChannel(BaseChannel):
                 "image_id": selected_image["id"],
                 "gallery_id": selected_image.get("gallery_id"),
                 "total_images": len(images),
-                "message": f"Selected {selected_image['filename']} from {len(images)} images"
+                "distribution_mode": distribution_mode,
+                "message": f"Selected {selected_image['filename']} from {len(images)} images (mode: {distribution_mode})"
             }
             
         except Exception as e:
@@ -1249,6 +1271,49 @@ class PhotoFrameChannel(BaseChannel):
                 "error": str(e),
                 "message": f"Failed to generate image: {str(e)}"
             }
+    
+    def _select_image_by_distribution(
+        self, 
+        images: List[Dict[str, Any]], 
+        distribution_mode: str, 
+        gallery_key: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Select image based on distribution mode
+        
+        Args:
+            images: List of available images
+            distribution_mode: "current" or "new"
+            gallery_key: Key for tracking state (gallery_id or "default")
+            
+        Returns:
+            Selected image dict or None
+        """
+        if distribution_mode == "current":
+            # Return the last selected image for this gallery
+            last_image_id = self._last_selected_by_gallery.get(gallery_key)
+            if last_image_id:
+                # Find the image with this ID
+                for image in images:
+                    if str(image["id"]) == str(last_image_id):
+                        return image
+            
+            # If no previous selection or image not found, fall back to new selection
+            # (This handles first-time requests or deleted images)
+        
+        # For "new" mode or "current" fallback, select a different image
+        last_image_id = self._last_selected_by_gallery.get(gallery_key)
+        
+        if last_image_id and len(images) > 1:
+            # Filter out the last selected image to ensure we get something new
+            available_images = [img for img in images if str(img["id"]) != str(last_image_id)]
+            if available_images:
+                images = available_images
+        
+        # Use existing image selection logic (random, custom order, etc.)
+        # For now, use random selection - could be enhanced to use settings
+        import random
+        return random.choice(images) if images else None
     
     def get_status(self) -> Dict[str, Any]:
         """
