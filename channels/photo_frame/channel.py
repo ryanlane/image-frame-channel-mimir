@@ -236,7 +236,7 @@ class PhotoFrameChannel(BaseChannel):
             print(f"   Actual: {actual_id}")
             print(f"   This may cause API routing issues.")
         
-        # Check critical directories
+        # Check critical directories with better error handling
         required_dirs = [
             self.channel_dir / "assets" / "uploads",
             self.channel_dir / "data"
@@ -244,8 +244,16 @@ class PhotoFrameChannel(BaseChannel):
         
         for dir_path in required_dirs:
             if not dir_path.exists():
-                print(f"📁 Creating required directory: {dir_path}")
-                dir_path.mkdir(parents=True, exist_ok=True)
+                try:
+                    print(f"📁 Creating required directory: {dir_path}")
+                    dir_path.mkdir(parents=True, exist_ok=True)
+                except PermissionError as e:
+                    print(f"❌ Permission denied creating {dir_path}: {e}")
+                    print(f"   Please ensure the API service has write permissions to {dir_path.parent}")
+                    raise RuntimeError(f"Cannot create required directory {dir_path}: {e}")
+                except Exception as e:
+                    print(f"❌ Failed to create directory {dir_path}: {e}")
+                    raise RuntimeError(f"Cannot create required directory {dir_path}: {e}")
     
     def _load_config(self) -> Dict[str, Any]:
         """Load channel configuration"""
