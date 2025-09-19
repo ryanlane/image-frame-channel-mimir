@@ -1228,6 +1228,9 @@ class PhotoFrameChannel(BaseChannel):
                 if cache_entry and (time.time() - cache_entry["ts"]) < self._cache_ttl_seconds:
                     cached_path = cache_entry["path"]
                     if os.path.exists(cached_path):
+                        # Keep sequence state consistent so next sequential fetch advances correctly
+                        if cache_entry.get("image_id"):
+                            self._last_selected_by_gallery[gallery_key] = cache_entry.get("image_id")
                         with open(cached_path, "rb") as f:
                             image_b64 = base64.b64encode(f.read()).decode("utf-8")
                         return {
@@ -1325,9 +1328,13 @@ class PhotoFrameChannel(BaseChannel):
 
             merged_settings = dict(settings_norm)
             merged_settings["crop_mode"] = crop_mode
-
-            rendered_path = await self.render_image(
-                (width, height), orientation=orientation, settings=merged_settings, subchannel_id=gallery_id
+            # Render the explicitly selected image (avoid render_image() which re-selects)
+            rendered_path = await self._render_selected_image(
+                selected_image,
+                (width, height),
+                orientation=orientation,
+                settings=merged_settings,
+                gallery_id=gallery_id,
             )
             if not rendered_path or not os.path.exists(rendered_path):
                 return {"success": False, "error": "Render failed"}
@@ -1359,6 +1366,44 @@ class PhotoFrameChannel(BaseChannel):
             }
         except Exception as e:  # noqa: BLE001
             return {"success": False, "error": f"Image request failed: {e}"}
+
+    async def _render_selected_image(
+        self,
+        image_record: Dict[str, Any],
+        resolution: Tuple[int, int],
+        orientation: str,
+        settings: Dict[str, Any],
+        gallery_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Render a specific pre-selected image to the resolution-specific cache path.
+
+        This isolates rendering from selection so request_image's ordering logic is
+        honored. Mirrors parts of render_image() without picking a new image.
+        """
+        try:
+            width, height = resolution
+            resolution_folder = f"{width}x{height}"
+            resolution_dir = self.channel_dir / "current" / resolution_folder
+            resolution_dir.mkdir(parents=True, exist_ok=True)
+            output_path = resolution_dir / "current.jpg"
+
+            await self._process_image_for_display(
+                image_record,
+                resolution,
+                orientation,
+                settings,
+            )
+            legacy_current = self.channel_dir / self.config["current_image"]
+            if legacy_current.exists():
+                shutil.copy2(legacy_current, output_path)
+            await self._update_image_stats(image_record.get("id"))
+            self.current_image_id = image_record.get("id")
+            self.last_update = datetime.now(timezone.utc)
+            self.last_error = None
+            return str(output_path)
+        except Exception as e:  # noqa: BLE001
+            self.last_error = str(e)
+            return None
 
     # Helper utilities
     def _normalize_settings(self, raw: Dict[str, Any]) -> Dict[str, Any]:
