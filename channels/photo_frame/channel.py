@@ -1246,12 +1246,19 @@ class PhotoFrameChannel(BaseChannel):
                         }
 
             # Gather candidate images
+            # NOTE: For gallery-specific requests we rely on the persisted ordering in
+            # Gallery.content_ids. The gallery service's get_gallery_content already returns
+            # images in that order (key: "content"). For order_mode=="custom" we explicitly
+            # re-apply the stored content_ids sequence to guarantee deterministic behavior
+            # even if the underlying metadata query order changes.
             if gallery_id:
                 all_images = self.metadata.get_all_images()
                 gallery_content = self.gallery_service.get_gallery_content(gallery_id, all_images)
-                images = gallery_content.get("images", []) if gallery_content else []
+                images = gallery_content.get("content", []) if gallery_content else []
+                gallery_obj = self.gallery_service.get_gallery(gallery_id)
             else:
                 images = self.metadata.get_all_images()
+                gallery_obj = None
             if not images:
                 return {"success": False, "error": "No images available"}
 
@@ -1260,7 +1267,34 @@ class PhotoFrameChannel(BaseChannel):
             if order_mode not in ("added", "random", "custom"):
                 order_mode = "added"
 
-            ordered_images = self._get_sorted_images(images, order_mode) if order_mode != "random" else images
+            # Build ordered image list per order mode (random handled later)
+            if order_mode == "random":
+                ordered_images = images
+            elif order_mode == "custom" and gallery_obj:
+                # Persisted custom ordering: follow gallery.content_ids exactly, filtering missing images.
+                id_to_image = {str(img.get("id")): img for img in images}
+                ordered_images = [id_to_image[cid] for cid in gallery_obj.content_ids if cid in id_to_image]
+                # Fallback: if something went wrong (e.g., all filtered), revert to current list.
+                if not ordered_images:
+                    ordered_images = list(images)
+                # (Optional future enhancement): detect and repair stale IDs by invoking
+                # gallery_service.validate_galleries_data_integrity.
+                # Lightweight robustness: if there are stale IDs, trigger integrity validation once.
+                missing_ids = [cid for cid in gallery_obj.content_ids if cid not in id_to_image]
+                if missing_ids:
+                    try:
+                        # Provide a set of all existing image ids to validator.
+                        existing_ids = {str(i.get("id")) for i in all_images}
+                        self.gallery_service.validate_galleries_data_integrity(existing_ids)
+                        # Refresh gallery object post-cleanup (non-critical if it fails)
+                        refreshed = self.gallery_service.get_gallery(gallery_id)
+                        if refreshed and refreshed is not gallery_obj:
+                            gallery_obj = refreshed
+                    except Exception:
+                        # Silent safeguard; selection still proceeds.
+                        pass
+            else:
+                ordered_images = self._get_sorted_images(images, order_mode)
 
             selected_image = None
             if order_mode == "random":
@@ -1361,11 +1395,16 @@ class PhotoFrameChannel(BaseChannel):
 
     # --- New order-aware helpers -------------------------------------------------
     def _get_sorted_images(self, images: List[Dict[str, Any]], order_mode: str) -> List[Dict[str, Any]]:
+        """Return images ordered for non-custom persisted modes.
+
+        Custom ordering now relies directly on gallery.content_ids inside request_image;
+        this helper retains legacy behavior for 'added' (insertion order) and any future
+        simple strategies. We keep a defensive branch for 'custom' but it will normally
+        be bypassed by earlier logic.
+        """
         if order_mode == "added":
-            # Assume earlier entries were added first; images list already in insertion order
             return list(images)
-        if order_mode == "custom":
-            # If custom order metadata exists (e.g., 'position'), sort by it; fallback to existing order
+        if order_mode == "custom":  # defensive fallback (should be handled earlier)
             return sorted(images, key=lambda i: i.get("position", 1_000_000))
         # random handled during selection
         return list(images)
