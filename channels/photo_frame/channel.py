@@ -216,8 +216,8 @@ class PhotoFrameChannel(BaseChannel):
 
         # Render cache: (gallery_key, width, height, orientation, crop_mode) -> entry
         # Used to reuse processed images when distribution_mode == "current" or rapid repeats occur.
-        self._render_cache: dict = {}
-        self._cache_ttl_seconds: int = 300  # basic TTL; can be made configurable
+        self._render_cache = {}
+        self._cache_ttl_seconds = 300  # basic TTL; can be made configurable
         
         # Ensure directories exist
         self._ensure_directories()
@@ -1231,8 +1231,12 @@ class PhotoFrameChannel(BaseChannel):
                         # Keep sequence state consistent so next sequential fetch advances correctly
                         if cache_entry.get("image_id"):
                             self._last_selected_by_gallery[gallery_key] = cache_entry.get("image_id")
+                            # Also sync positional index if we can find it
+                            cached_id = str(cache_entry.get("image_id"))
+                            # We'll populate images later if needed; defer index sync
                         with open(cached_path, "rb") as f:
                             image_b64 = base64.b64encode(f.read()).decode("utf-8")
+                        print(f"[PhotoFrameChannel] cache-hit gallery={gallery_key} key={cache_key} image_id={cache_entry.get('image_id')}")
                         return {
                             "success": True,
                             "image": image_b64,
@@ -1264,6 +1268,7 @@ class PhotoFrameChannel(BaseChannel):
                 gallery_obj = None
             if not images:
                 return {"success": False, "error": "No images available"}
+            print(f"[PhotoFrameChannel] candidates gallery={gallery_key} count={len(images)} order_mode={settings_norm.get('order_mode')} distribution={distribution_mode}")
 
             # Determine ordering behavior
             order_mode = settings_norm.get("order_mode", "added")
@@ -1298,6 +1303,10 @@ class PhotoFrameChannel(BaseChannel):
                         pass
             else:
                 ordered_images = self._get_sorted_images(images, order_mode)
+            # Normalize IDs to strings for consistent comparisons
+            for img in ordered_images:
+                if 'id' in img:
+                    img['id'] = str(img['id'])
 
             selected_image = None
             if order_mode == "random":
@@ -1325,6 +1334,7 @@ class PhotoFrameChannel(BaseChannel):
                     selected_image = self._next_sequential_image(ordered_images, gallery_key)
             if not selected_image:
                 return {"success": False, "error": "Unable to select image"}
+            print(f"[PhotoFrameChannel] selected image_id={selected_image.get('id')} gallery={gallery_key} mode={order_mode} dist={distribution_mode}")
 
             merged_settings = dict(settings_norm)
             merged_settings["crop_mode"] = crop_mode
@@ -1455,17 +1465,28 @@ class PhotoFrameChannel(BaseChannel):
         return list(images)
 
     def _next_sequential_image(self, images: List[Dict[str, Any]], gallery_key: str) -> Optional[Dict[str, Any]]:
+        """Return next image in sequence.
+
+        Uses in-memory last selection when available; otherwise falls back to a
+        persisted heuristic based on times_shown and last_shown_at so rotation
+        still progresses even if the channel instance was recreated.
+        """
         if not images:
             return None
         last_id = self._last_selected_by_gallery.get(gallery_key)
-        if last_id is None:
-            return images[0]
-        # find index
+        if last_id:
+            for idx, img in enumerate(images):
+                if str(img.get("id")) == str(last_id):
+                    return images[(idx + 1) % len(images)]
+        # Stateless fallback: pick the least shown image; tie-break on last_shown_at then original order
+        scored: list[tuple[int, str, int, Dict[str, Any]]] = []
         for idx, img in enumerate(images):
-            if img.get("id") == last_id:
-                return images[(idx + 1) % len(images)]
-        # last not found, start from first
-        return images[0]
+            times = img.get("times_shown", 0) or 0
+            # None should sort before later timestamps so use '': empty string sorts first
+            last_shown = img.get("last_shown_at") or ""
+            scored.append((times, last_shown, idx, img))
+        scored.sort(key=lambda t: (t[0], t[1], t[2]))
+        return scored[0][3] if scored else None
 
 # Export the channel class for embedded plugin discovery
 ChannelClass = PhotoFrameChannel
