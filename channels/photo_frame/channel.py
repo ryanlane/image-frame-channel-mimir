@@ -455,6 +455,27 @@ class PhotoFrameChannel(BaseChannel):
             self.image_service, self.gallery_service, self.storage_service,
             self.rendering_service, self.settings_manager, self.metadata
         ))
+
+        # --- Feature Detection Endpoints (for platform probing of channel capabilities) ---
+        @router.get("/test")
+        async def test_get():  # noqa: D401
+            return JSONResponse({
+                "success": True,
+                "id": self.id,
+                "message": "Photo Frame channel responsive",
+                "supports_subchannels": self.gallery_service is not None,
+                "total_images": len(self.metadata.get_all_images())
+            })
+
+        @router.post("/test")
+        async def test_post():  # noqa: D401
+            return JSONResponse({
+                "success": True,
+                "id": self.id,
+                "message": "Photo Frame channel responsive",
+                "supports_subchannels": self.gallery_service is not None,
+                "total_images": len(self.metadata.get_all_images())
+            })
         
         return router
         
