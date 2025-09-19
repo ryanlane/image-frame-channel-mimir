@@ -409,20 +409,7 @@ class PhotoFrameChannel(BaseChannel):
             if settings.get("transition_effect") not in valid_transitions:
                 errors["transition_effect"] = f"Must be one of: {', '.join(valid_transitions)}"
         
-        # Validate update_interval_unit (only if present)
-        if "update_interval_unit" in settings:
-            valid_units = ["days", "hours", "minutes", "seconds"]
-            if settings.get("update_interval_unit") not in valid_units:
-                errors["update_interval_unit"] = f"Must be one of: {', '.join(valid_units)}"
-        
-        # Validate update_interval_value (only if present)
-        if "update_interval_value" in settings:
-            try:
-                value = int(settings.get("update_interval_value"))
-                if value < 1:
-                    errors["update_interval_value"] = "Must be at least 1"
-            except (TypeError, ValueError):
-                errors["update_interval_value"] = "Must be a valid positive integer"
+        # Update interval removed: scheduling handled externally
         
         return errors
     
@@ -963,8 +950,6 @@ class PhotoFrameChannel(BaseChannel):
             return {
                 "order_mode": {"value": "added"},
                 "crop_mode": {"value": "smart_crop"},
-                "update_interval_value": {"value": 30},
-                "update_interval_unit": {"value": "minutes"},
                 "slideshow_enabled": {"value": True},
                 "transition_effect": {"value": "fade"}
             }
@@ -1270,17 +1255,37 @@ class PhotoFrameChannel(BaseChannel):
             if not images:
                 return {"success": False, "error": "No images available"}
 
-            # Reuse last if current
+            # Determine ordering behavior
+            order_mode = settings_norm.get("order_mode", "added")
+            if order_mode not in ("added", "random", "custom"):
+                order_mode = "added"
+
+            ordered_images = self._get_sorted_images(images, order_mode) if order_mode != "random" else images
+
             selected_image = None
-            if distribution_mode == "current":
-                last_id = self._last_selected_by_gallery.get(gallery_key)
-                if last_id:
-                    for img in images:
-                        if img.get("id") == last_id:
-                            selected_image = img
-                            break
-            if not selected_image:
-                selected_image = self._select_image_by_distribution(images, "new", gallery_key)
+            if order_mode == "random":
+                if distribution_mode == "current":
+                    # attempt reuse
+                    last_id = self._last_selected_by_gallery.get(gallery_key)
+                    if last_id:
+                        for img in images:
+                            if img.get("id") == last_id:
+                                selected_image = img
+                                break
+                if not selected_image:
+                    selected_image = self._select_image_by_distribution(images, "new", gallery_key)
+            else:
+                # sequential modes
+                if distribution_mode == "current":
+                    # reuse last if present
+                    last_id = self._last_selected_by_gallery.get(gallery_key)
+                    if last_id:
+                        for img in ordered_images:
+                            if img.get("id") == last_id:
+                                selected_image = img
+                                break
+                if not selected_image:
+                    selected_image = self._next_sequential_image(ordered_images, gallery_key)
             if not selected_image:
                 return {"success": False, "error": "Unable to select image"}
 
@@ -1349,10 +1354,34 @@ class PhotoFrameChannel(BaseChannel):
     def _select_image_by_distribution(self, images: List[Dict[str, Any]], distribution_mode: str, gallery_key: str) -> Optional[Dict[str, Any]]:
         if not images:
             return None
-        # Basic random rotation avoiding immediate repeat
+        # Order mode aware rotation will be handled elsewhere; here we just avoid repeat for random fallback
         last_id = self._last_selected_by_gallery.get(gallery_key)
         candidates = [img for img in images if img.get("id") != last_id] or images
         return random.choice(candidates)
+
+    # --- New order-aware helpers -------------------------------------------------
+    def _get_sorted_images(self, images: List[Dict[str, Any]], order_mode: str) -> List[Dict[str, Any]]:
+        if order_mode == "added":
+            # Assume earlier entries were added first; images list already in insertion order
+            return list(images)
+        if order_mode == "custom":
+            # If custom order metadata exists (e.g., 'position'), sort by it; fallback to existing order
+            return sorted(images, key=lambda i: i.get("position", 1_000_000))
+        # random handled during selection
+        return list(images)
+
+    def _next_sequential_image(self, images: List[Dict[str, Any]], gallery_key: str) -> Optional[Dict[str, Any]]:
+        if not images:
+            return None
+        last_id = self._last_selected_by_gallery.get(gallery_key)
+        if last_id is None:
+            return images[0]
+        # find index
+        for idx, img in enumerate(images):
+            if img.get("id") == last_id:
+                return images[(idx + 1) % len(images)]
+        # last not found, start from first
+        return images[0]
 
 # Export the channel class for embedded plugin discovery
 ChannelClass = PhotoFrameChannel

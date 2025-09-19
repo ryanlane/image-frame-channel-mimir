@@ -705,10 +705,8 @@ class XPhotoFrameManager extends HTMLElement {
       // Use defaults if loading fails
       gallerySettings = {
         order_mode: 'added',
-        crop_mode: 'smart_crop',
-        update_interval_value: 30,
-        update_interval_unit: 'minutes'
-      };
+        crop_mode: 'smart_crop'
+      }; 
     }
 
     const modal = document.createElement('div');
@@ -752,20 +750,7 @@ class XPhotoFrameManager extends HTMLElement {
                   <option value="fill" ${gallerySettings.crop_mode === 'fill' ? 'selected' : ''}>Fill Screen</option>
                 </select>
               </div>
-              // <div class="form-group-row">
-              //   <div class="form-group">
-              //     <label for="update-interval-value">Update Every:</label>
-              //     <input type="number" id="update-interval-value" min="1" value="${gallerySettings.update_interval_value || 30}" />
-              //   </div>
-              //   <div class="form-group">
-              //     <label for="update-interval-unit">&nbsp;</label>
-              //     <select id="update-interval-unit">
-              //       <option value="seconds" ${gallerySettings.update_interval_unit === 'seconds' ? 'selected' : ''}>Seconds</option>
-              //       <option value="minutes" ${gallerySettings.update_interval_unit === 'minutes' ? 'selected' : ''}>Minutes</option>
-              //       <option value="hours" ${gallerySettings.update_interval_unit === 'hours' ? 'selected' : ''}>Hours</option>
-              //     </select>
-              //   </div>
-              // </div>
+              <!-- Update interval removed: scheduling handled by external service -->
             </div>
             <div class="settings-section" style="margin-top:32px;">
               <button class="btn-secondary" id="delete-gallery-btn" style="background:#dc3545;color:white;width:100%;margin-top:16px;">🗑️ Delete Gallery</button>
@@ -951,8 +936,7 @@ class XPhotoFrameManager extends HTMLElement {
       // Get photo frame settings for this gallery
       const orderMode = modal.querySelector('#order-mode').value;
       const cropMode = modal.querySelector('#crop-mode').value;
-      const updateIntervalValue = modal.querySelector('#update-interval-value').value;
-      const updateIntervalUnit = modal.querySelector('#update-interval-unit').value;
+  // Update interval inputs removed (external scheduler handles cadence)
 
       // Save gallery properties
       console.log('Making gallery metadata request to:', `${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}`);
@@ -971,9 +955,7 @@ class XPhotoFrameManager extends HTMLElement {
       // Save gallery-specific display settings
       const gallerySettings = {
         order_mode: orderMode,
-        crop_mode: cropMode,
-        update_interval_value: parseInt(updateIntervalValue),
-        update_interval_unit: updateIntervalUnit
+        crop_mode: cropMode
       };
 
       console.log('Making gallery settings request to:', `${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/subchannels/${gallery.id}/settings`);
