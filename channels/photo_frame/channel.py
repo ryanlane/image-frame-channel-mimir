@@ -5,6 +5,8 @@ import asyncio
 import re
 import random
 import shutil
+import time
+import base64
 """
 Photo Frame Channel for Mimir Platform v2.4+ with Gallery Support
 
@@ -211,6 +213,11 @@ class PhotoFrameChannel(BaseChannel):
         )
         self.rendering_service = RenderingService(self.channel_dir)
         self.storage_service = StorageService(self.channel_dir)
+
+        # Render cache: (gallery_key, width, height, orientation, crop_mode) -> entry
+        # Used to reuse processed images when distribution_mode == "current" or rapid repeats occur.
+        self._render_cache: dict = {}
+        self._cache_ttl_seconds: int = 300  # basic TTL; can be made configurable
         
         # Ensure directories exist
         self._ensure_directories()
@@ -1193,135 +1200,159 @@ class PhotoFrameChannel(BaseChannel):
             }
     
     async def request_image(self, request_data: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Generate a random image for display (embedded plugin interface)
-        
-        Args:
-            request_data: Optional request parameters including:
-                - gallery_id: Gallery to select from
-                - settings: Display settings including distribution mode
-                
-        Returns:
-            Dictionary with image data or error information
-        """
+        """Return processed image honoring resolution, orientation (landscape/portrait/square), crop_mode, and distribution cache."""
         try:
-            # Get settings from request data
-            settings = request_data.get("settings", {}) if request_data else {}
-            gallery_id = request_data.get("gallery_id") if request_data else None
-            
-            # Extract distribution mode from settings (default to "new")
-            distribution_mode = settings.get("distribution", "new")
-            if distribution_mode not in ["current", "new"]:
-                distribution_mode = "new"  # Fallback to safe default
-            
-            # Get images from specified gallery or all images
+            data = request_data or {}
+            gallery_id = data.get("gallery_id")
+            settings_raw = data.get("settings", {})
+            settings_norm = self._normalize_settings(settings_raw)
+
+            distribution_mode = settings_norm.get("distribution", "new")
+            if distribution_mode not in ("current", "new"):
+                distribution_mode = "new"
+
+            # Resolution
+            resolution = settings_norm.get("resolution") or [800, 600]
+            if not isinstance(resolution, (list, tuple)) or len(resolution) != 2:
+                resolution = [800, 600]
+            try:
+                width, height = int(resolution[0]), int(resolution[1])
+            except Exception:  # noqa: BLE001
+                width, height = 800, 600
+            if width <= 0 or height <= 0:
+                width, height = 800, 600
+
+            # Orientation
+            orientation = settings_norm.get("orientation")
+            if orientation not in ("landscape", "portrait", "square"):
+                if width == height:
+                    orientation = "square"
+                else:
+                    orientation = "portrait" if height > width else "landscape"
+            if orientation == "square" and width != height:
+                side = min(width, height)
+                width = height = side
+
+            crop_mode = self._canonicalize_crop_mode(settings_norm.get("crop_mode"))
+            gallery_key = gallery_id or "default"
+            cache_key = self._render_cache_key(gallery_key, width, height, orientation, crop_mode)
+
+            # Cache reuse when distribution_mode == current
+            if distribution_mode == "current":
+                cache_entry = self._render_cache.get(cache_key)
+                if cache_entry and (time.time() - cache_entry["ts"]) < self._cache_ttl_seconds:
+                    cached_path = cache_entry["path"]
+                    if os.path.exists(cached_path):
+                        with open(cached_path, "rb") as f:
+                            image_b64 = base64.b64encode(f.read()).decode("utf-8")
+                        return {
+                            "success": True,
+                            "image": image_b64,
+                            "filename": Path(cached_path).name,
+                            "image_id": cache_entry.get("image_id"),
+                            "gallery_id": gallery_id,
+                            "width": width,
+                            "height": height,
+                            "orientation": orientation,
+                            "crop_mode": crop_mode,
+                            "distribution_mode": distribution_mode,
+                            "cached": True,
+                            "message": "Reused cached render",
+                        }
+
+            # Gather candidate images
             if gallery_id:
-                # Use existing method to get gallery content
                 all_images = self.metadata.get_all_images()
                 gallery_content = self.gallery_service.get_gallery_content(gallery_id, all_images)
-                images = gallery_content.get("content", [])
+                images = gallery_content.get("images", []) if gallery_content else []
             else:
-                # Get all images from metadata service
                 images = self.metadata.get_all_images()
-            
             if not images:
-                return {
-                    "success": False,
-                    "error": "No images available",
-                    "message": "Please upload images to use this channel"
-                }
-            
-            # Select image based on distribution mode
-            selected_image = self._select_image_by_distribution(
-                images, distribution_mode, gallery_id or "default"
-            )
-            
+                return {"success": False, "error": "No images available"}
+
+            # Reuse last if current
+            selected_image = None
+            if distribution_mode == "current":
+                last_id = self._last_selected_by_gallery.get(gallery_key)
+                if last_id:
+                    for img in images:
+                        if img.get("id") == last_id:
+                            selected_image = img
+                            break
             if not selected_image:
-                return {
-                    "success": False,
-                    "error": "No suitable image found",
-                    "message": "Image selection failed"
-                }
-            
-            # Get image file path
-            image_path = self.storage_service.uploads_dir / selected_image["filename"]
-            
-            if not image_path.exists():
-                return {
-                    "success": False,
-                    "error": "Selected image file not found",
-                    "filename": selected_image["filename"]
-                }
-            
-            # Encode image as base64
-            import base64
-            with open(image_path, 'rb') as f:
-                image_data = f.read()
-                image_b64 = base64.b64encode(image_data).decode('utf-8')
-            
-            # Update state tracking for future "current" requests
-            self._last_selected_by_gallery[gallery_id or "default"] = selected_image["id"]
-            
+                selected_image = self._select_image_by_distribution(images, "new", gallery_key)
+            if not selected_image:
+                return {"success": False, "error": "Unable to select image"}
+
+            merged_settings = dict(settings_norm)
+            merged_settings["crop_mode"] = crop_mode
+
+            rendered_path = await self.render_image(
+                (width, height), orientation=orientation, settings=merged_settings, subchannel_id=gallery_id
+            )
+            if not rendered_path or not os.path.exists(rendered_path):
+                return {"success": False, "error": "Render failed"}
+
+            with open(rendered_path, "rb") as f:
+                image_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+            # Track selection and cache
+            self._last_selected_by_gallery[gallery_key] = selected_image.get("id")
+            self._render_cache[cache_key] = {
+                "path": rendered_path,
+                "image_id": selected_image.get("id"),
+                "ts": time.time(),
+            }
+
             return {
                 "success": True,
                 "image": image_b64,
-                "filename": selected_image["filename"],
-                "image_id": selected_image["id"],
-                "gallery_id": selected_image.get("gallery_id"),
-                "total_images": len(images),
+                "filename": Path(rendered_path).name,
+                "image_id": selected_image.get("id"),
+                "gallery_id": gallery_id,
+                "width": width,
+                "height": height,
+                "orientation": orientation,
+                "crop_mode": crop_mode,
                 "distribution_mode": distribution_mode,
-                "message": f"Selected {selected_image['filename']} from {len(images)} images (mode: {distribution_mode})"
+                "cached": False,
+                "message": "Rendered new image",
             }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Failed to generate image: {str(e)}"
-            }
-    
-    def _select_image_by_distribution(
-        self, 
-        images: List[Dict[str, Any]], 
-        distribution_mode: str, 
-        gallery_key: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Select image based on distribution mode
-        
-        Args:
-            images: List of available images
-            distribution_mode: "current" or "new"
-            gallery_key: Key for tracking state (gallery_id or "default")
-            
-        Returns:
-            Selected image dict or None
-        """
-        if distribution_mode == "current":
-            # Return the last selected image for this gallery
-            last_image_id = self._last_selected_by_gallery.get(gallery_key)
-            if last_image_id:
-                # Find the image with this ID
-                for image in images:
-                    if str(image["id"]) == str(last_image_id):
-                        return image
-            
-            # If no previous selection or image not found, fall back to new selection
-            # (This handles first-time requests or deleted images)
-        
-        # For "new" mode or "current" fallback, select a different image
-        last_image_id = self._last_selected_by_gallery.get(gallery_key)
-        
-        if last_image_id and len(images) > 1:
-            # Filter out the last selected image to ensure we get something new
-            available_images = [img for img in images if str(img["id"]) != str(last_image_id)]
-            if available_images:
-                images = available_images
-        
-        # Use existing image selection logic (random, custom order, etc.)
-        # For now, use random selection - could be enhanced to use settings
-        import random
-        return random.choice(images) if images else None
+        except Exception as e:  # noqa: BLE001
+            return {"success": False, "error": f"Image request failed: {e}"}
+
+    # Helper utilities
+    def _normalize_settings(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+        norm: Dict[str, Any] = {}
+        for k, v in raw.items():
+            if isinstance(v, dict) and set(v.keys()) == {"value"}:
+                norm[k] = v["value"]
+            else:
+                norm[k] = v
+        return norm
+
+    def _canonicalize_crop_mode(self, value: Optional[str]) -> str:
+        if not value:
+            return "smart_crop"
+        v = str(value).lower().replace("-", "_")
+        if v in ("fit", "fit_to_screen", "letterbox", "fit_screen"):
+            return "letterbox"
+        if v in ("fill", "fill_screen", "cover", "stretch_to_fill"):
+            return "stretch"
+        if v not in ("smart_crop", "letterbox", "stretch"):
+            return "smart_crop"
+        return v
+
+    def _render_cache_key(self, gallery_key: str, width: int, height: int, orientation: str, crop_mode: str) -> str:
+        return f"{gallery_key}:{width}x{height}:{orientation}:{crop_mode}"
+
+    def _select_image_by_distribution(self, images: List[Dict[str, Any]], distribution_mode: str, gallery_key: str) -> Optional[Dict[str, Any]]:
+        if not images:
+            return None
+        # Basic random rotation avoiding immediate repeat
+        last_id = self._last_selected_by_gallery.get(gallery_key)
+        candidates = [img for img in images if img.get("id") != last_id] or images
+        return random.choice(candidates)
 
 # Export the channel class for embedded plugin discovery
 ChannelClass = PhotoFrameChannel

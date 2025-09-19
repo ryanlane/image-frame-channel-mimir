@@ -752,20 +752,20 @@ class XPhotoFrameManager extends HTMLElement {
                   <option value="fill" ${gallerySettings.crop_mode === 'fill' ? 'selected' : ''}>Fill Screen</option>
                 </select>
               </div>
-              <div class="form-group-row">
-                <div class="form-group">
-                  <label for="update-interval-value">Update Every:</label>
-                  <input type="number" id="update-interval-value" min="1" value="${gallerySettings.update_interval_value || 30}" />
-                </div>
-                <div class="form-group">
-                  <label for="update-interval-unit">&nbsp;</label>
-                  <select id="update-interval-unit">
-                    <option value="seconds" ${gallerySettings.update_interval_unit === 'seconds' ? 'selected' : ''}>Seconds</option>
-                    <option value="minutes" ${gallerySettings.update_interval_unit === 'minutes' ? 'selected' : ''}>Minutes</option>
-                    <option value="hours" ${gallerySettings.update_interval_unit === 'hours' ? 'selected' : ''}>Hours</option>
-                  </select>
-                </div>
-              </div>
+              // <div class="form-group-row">
+              //   <div class="form-group">
+              //     <label for="update-interval-value">Update Every:</label>
+              //     <input type="number" id="update-interval-value" min="1" value="${gallerySettings.update_interval_value || 30}" />
+              //   </div>
+              //   <div class="form-group">
+              //     <label for="update-interval-unit">&nbsp;</label>
+              //     <select id="update-interval-unit">
+              //       <option value="seconds" ${gallerySettings.update_interval_unit === 'seconds' ? 'selected' : ''}>Seconds</option>
+              //       <option value="minutes" ${gallerySettings.update_interval_unit === 'minutes' ? 'selected' : ''}>Minutes</option>
+              //       <option value="hours" ${gallerySettings.update_interval_unit === 'hours' ? 'selected' : ''}>Hours</option>
+              //     </select>
+              //   </div>
+              // </div>
             </div>
             <div class="settings-section" style="margin-top:32px;">
               <button class="btn-secondary" id="delete-gallery-btn" style="background:#dc3545;color:white;width:100%;margin-top:16px;">🗑️ Delete Gallery</button>
