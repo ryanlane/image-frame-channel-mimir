@@ -1186,7 +1186,12 @@ class PhotoFrameChannel(BaseChannel):
                     },
                     "styles": "/api/channels/com.epaperframe.photoframe/ui/styles.css",
                     "icon": "🖼️",
-                    "title": "Photo Frame Manager"
+                    "title": "Photo Frame Manager",
+                    "elements": {
+                        "manager": "x-photo-frame-manager",
+                        "gallery_card": "photo-frame-gallery-card",
+                        "image_card": "photo-frame-image-card"
+                    }
                 },
                 "galleries": [
                     {
