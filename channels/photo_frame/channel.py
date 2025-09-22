@@ -1211,9 +1211,24 @@ class PhotoFrameChannel(BaseChannel):
             }
     
     async def request_image(self, request_data: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Return processed image honoring resolution, orientation (landscape/portrait/square), crop_mode, and distribution cache."""
-        try:
+        """Return processed image with modern transport contract.
+
+        Modern contract (for central API router):
+          - Always provide raw bytes in 'bytes'
+          - Provide 'content_type' (default image/jpeg, sniffed if PNG)
+          - ONLY provide base64 (legacy) when include_base64=true in request_data
+          - Preserve prior metadata fields for backward compatibility
+
+        This enables the platform to store the image in the in-memory channel_image_store
+        and expose it via /api/channels/{channel_id}/images/{image_id} without forcing
+        base64 transfer overhead.
+        """
+        try:  # noqa: C901 (complex but self-contained)
             data = request_data or {}
+            include_base64 = bool(data.get("include_base64"))
+            # Optional explicit suppression (mirrors spotify channel pattern)
+            suppress_legacy_base64 = bool(data.get("suppress_legacy_base64"))
+
             gallery_id = data.get("gallery_id")
             settings_raw = data.get("settings", {})
             settings_norm = self._normalize_settings(settings_raw)
@@ -1222,7 +1237,7 @@ class PhotoFrameChannel(BaseChannel):
             if distribution_mode not in ("current", "new"):
                 distribution_mode = "new"
 
-            # Resolution
+            # Resolution parsing with defensive fallbacks
             resolution = settings_norm.get("resolution") or [800, 600]
             if not isinstance(resolution, (list, tuple)) or len(resolution) != 2:
                 resolution = [800, 600]
@@ -1233,13 +1248,10 @@ class PhotoFrameChannel(BaseChannel):
             if width <= 0 or height <= 0:
                 width, height = 800, 600
 
-            # Orientation
+            # Orientation normalization
             orientation = settings_norm.get("orientation")
             if orientation not in ("landscape", "portrait", "square"):
-                if width == height:
-                    orientation = "square"
-                else:
-                    orientation = "portrait" if height > width else "landscape"
+                orientation = "square" if width == height else ("portrait" if height > width else "landscape")
             if orientation == "square" and width != height:
                 side = min(width, height)
                 width = height = side
@@ -1248,24 +1260,26 @@ class PhotoFrameChannel(BaseChannel):
             gallery_key = gallery_id or "default"
             cache_key = self._render_cache_key(gallery_key, width, height, orientation, crop_mode)
 
-            # Cache reuse when distribution_mode == current
+            # Cache reuse (distribution_mode == current)
             if distribution_mode == "current":
                 cache_entry = self._render_cache.get(cache_key)
                 if cache_entry and (time.time() - cache_entry["ts"]) < self._cache_ttl_seconds:
                     cached_path = cache_entry["path"]
                     if os.path.exists(cached_path):
-                        # Keep sequence state consistent so next sequential fetch advances correctly
                         if cache_entry.get("image_id"):
                             self._last_selected_by_gallery[gallery_key] = cache_entry.get("image_id")
-                            # Also sync positional index if we can find it
-                            cached_id = str(cache_entry.get("image_id"))
-                            # We'll populate images later if needed; defer index sync
                         with open(cached_path, "rb") as f:
-                            image_b64 = base64.b64encode(f.read()).decode("utf-8")
-                        print(f"[PhotoFrameChannel] cache-hit gallery={gallery_key} key={cache_key} image_id={cache_entry.get('image_id')}")
-                        return {
+                            content_bytes = f.read()
+                        # Sniff content type (currently renders JPEG, but future-proof)
+                        content_type = "image/jpeg"
+                        if content_bytes.startswith(b"\x89PNG"):
+                            content_type = "image/png"
+                        elif content_bytes[0:2] == b"\xff\xd8":
+                            content_type = "image/jpeg"
+                        response: Dict[str, Any] = {
                             "success": True,
-                            "image": image_b64,
+                            "bytes": content_bytes,
+                            "content_type": content_type,
                             "filename": Path(cached_path).name,
                             "image_id": cache_entry.get("image_id"),
                             "gallery_id": gallery_id,
@@ -1276,14 +1290,13 @@ class PhotoFrameChannel(BaseChannel):
                             "distribution_mode": distribution_mode,
                             "cached": True,
                             "message": "Reused cached render",
+                            "preferred_transport": "bytes",
                         }
+                        if include_base64 and not suppress_legacy_base64:
+                            response["image"] = base64.b64encode(content_bytes).decode("utf-8")
+                        return response
 
-            # Gather candidate images
-            # NOTE: For gallery-specific requests we rely on the persisted ordering in
-            # Gallery.content_ids. The gallery service's get_gallery_content already returns
-            # images in that order (key: "content"). For order_mode=="custom" we explicitly
-            # re-apply the stored content_ids sequence to guarantee deterministic behavior
-            # even if the underlying metadata query order changes.
+            # Candidate image gathering
             if gallery_id:
                 all_images = self.metadata.get_all_images()
                 gallery_content = self.gallery_service.get_gallery_content(gallery_id, all_images)
@@ -1296,40 +1309,29 @@ class PhotoFrameChannel(BaseChannel):
                 return {"success": False, "error": "No images available"}
             print(f"[PhotoFrameChannel] candidates gallery={gallery_key} count={len(images)} order_mode={settings_norm.get('order_mode')} distribution={distribution_mode}")
 
-            # Determine ordering behavior
             order_mode = settings_norm.get("order_mode", "added")
             if order_mode not in ("added", "random", "custom"):
                 order_mode = "added"
 
-            # Build ordered image list per order mode (random handled later)
             if order_mode == "random":
                 ordered_images = images
             elif order_mode == "custom" and gallery_obj:
-                # Persisted custom ordering: follow gallery.content_ids exactly, filtering missing images.
                 id_to_image = {str(img.get("id")): img for img in images}
                 ordered_images = [id_to_image[cid] for cid in gallery_obj.content_ids if cid in id_to_image]
-                # Fallback: if something went wrong (e.g., all filtered), revert to current list.
                 if not ordered_images:
                     ordered_images = list(images)
-                # (Optional future enhancement): detect and repair stale IDs by invoking
-                # gallery_service.validate_galleries_data_integrity.
-                # Lightweight robustness: if there are stale IDs, trigger integrity validation once.
                 missing_ids = [cid for cid in gallery_obj.content_ids if cid not in id_to_image]
                 if missing_ids:
                     try:
-                        # Provide a set of all existing image ids to validator.
                         existing_ids = {str(i.get("id")) for i in all_images}
                         self.gallery_service.validate_galleries_data_integrity(existing_ids)
-                        # Refresh gallery object post-cleanup (non-critical if it fails)
                         refreshed = self.gallery_service.get_gallery(gallery_id)
                         if refreshed and refreshed is not gallery_obj:
                             gallery_obj = refreshed
-                    except Exception:
-                        # Silent safeguard; selection still proceeds.
+                    except Exception:  # noqa: BLE001
                         pass
             else:
                 ordered_images = self._get_sorted_images(images, order_mode)
-            # Normalize IDs to strings for consistent comparisons
             for img in ordered_images:
                 if 'id' in img:
                     img['id'] = str(img['id'])
@@ -1337,7 +1339,6 @@ class PhotoFrameChannel(BaseChannel):
             selected_image = None
             if order_mode == "random":
                 if distribution_mode == "current":
-                    # attempt reuse
                     last_id = self._last_selected_by_gallery.get(gallery_key)
                     if last_id:
                         for img in images:
@@ -1347,9 +1348,7 @@ class PhotoFrameChannel(BaseChannel):
                 if not selected_image:
                     selected_image = self._select_image_by_distribution(images, "new", gallery_key)
             else:
-                # sequential modes
                 if distribution_mode == "current":
-                    # reuse last if present
                     last_id = self._last_selected_by_gallery.get(gallery_key)
                     if last_id:
                         for img in ordered_images:
@@ -1364,7 +1363,6 @@ class PhotoFrameChannel(BaseChannel):
 
             merged_settings = dict(settings_norm)
             merged_settings["crop_mode"] = crop_mode
-            # Render the explicitly selected image (avoid render_image() which re-selects)
             rendered_path = await self._render_selected_image(
                 selected_image,
                 (width, height),
@@ -1376,9 +1374,15 @@ class PhotoFrameChannel(BaseChannel):
                 return {"success": False, "error": "Render failed"}
 
             with open(rendered_path, "rb") as f:
-                image_b64 = base64.b64encode(f.read()).decode("utf-8")
+                content_bytes = f.read()
 
-            # Track selection and cache
+            content_type = "image/jpeg"
+            if content_bytes.startswith(b"\x89PNG"):
+                content_type = "image/png"
+            elif content_bytes[0:2] == b"\xff\xd8":
+                content_type = "image/jpeg"
+
+            # Update caches
             self._last_selected_by_gallery[gallery_key] = selected_image.get("id")
             self._render_cache[cache_key] = {
                 "path": rendered_path,
@@ -1386,9 +1390,10 @@ class PhotoFrameChannel(BaseChannel):
                 "ts": time.time(),
             }
 
-            return {
+            response: Dict[str, Any] = {
                 "success": True,
-                "image": image_b64,
+                "bytes": content_bytes,
+                "content_type": content_type,
                 "filename": Path(rendered_path).name,
                 "image_id": selected_image.get("id"),
                 "gallery_id": gallery_id,
@@ -1399,7 +1404,11 @@ class PhotoFrameChannel(BaseChannel):
                 "distribution_mode": distribution_mode,
                 "cached": False,
                 "message": "Rendered new image",
+                "preferred_transport": "bytes",
             }
+            if include_base64 and not suppress_legacy_base64:
+                response["image"] = base64.b64encode(content_bytes).decode("utf-8")
+            return response
         except Exception as e:  # noqa: BLE001
             return {"success": False, "error": f"Image request failed: {e}"}
 
