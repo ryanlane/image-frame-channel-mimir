@@ -35,69 +35,144 @@ Architecture: Modular FastAPI design with dependency injection and service layer
 
 from datetime import datetime, timezone
 from typing import Tuple, Dict, Any, Optional, List
+from datetime import datetime, timezone
+from typing import Tuple, Dict, Any, Optional, List
 from pathlib import Path
+import sys
+import importlib.util
+import traceback
+import logging
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 
-# New model imports
-try:
-    from models import (
-        Gallery, GalleryCreate, GalleryUpdate,
-        Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
-        ChannelSettings, GallerySettings, SettingsManager
-    )
-except ImportError:
-    # Fallback for when running from channel directory
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent))
-    from models import (
-        Gallery, GalleryCreate, GalleryUpdate,
-        Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
-        ChannelSettings, GallerySettings, SettingsManager
-    )
+_PLUGIN_DIR = Path(__file__).parent
 
-# New service imports  
-try:
-    from services import (
-        GalleryService, ImageService, RenderingService, StorageService
-    )
-except ImportError:
-    # Fallback for when running from channel directory
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent))
-    from services import (
-        GalleryService, ImageService, RenderingService, StorageService
-    )
+logger = logging.getLogger("mimir.channels.photoframe")
+if not logger.handlers:
+    # Basic config only if root not already configured
+    logging.basicConfig(level=logging.INFO)
 
-# New route imports
-try:
-    from routes import (
-        create_images_router, create_galleries_router, create_settings_router,
-        create_assets_router, create_legacy_assets_router, create_admin_router,
-        create_subchannel_settings_router
-    )
-except ImportError:
-    # Fallback for when running from channel directory
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent))
-    from routes import (
-        create_images_router, create_galleries_router, create_settings_router,
-        create_assets_router, create_legacy_assets_router, create_admin_router,
-        create_subchannel_settings_router
-    )
+def _import_local(module_key: str, rel_path: str):
+    """Import a sibling module by explicit file path with pre-registration.
 
-# Handle imports for both standalone and platform usage
-try:
-    from utils.image_processor import ImageProcessor
-    from utils.file_metadata import FileMetadataManager
-except ImportError:
-    # Fallback for standalone testing
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent))
-    from utils.image_processor import ImageProcessor
-    from utils.file_metadata import FileMetadataManager
+    Provides deterministic, package-independent loading so dynamic discovery
+    (importlib.spec_from_file_location) doesn't break relative imports or
+    decorator introspection (e.g. @dataclass) which expects the module present
+    in sys.modules during class creation.
+    """
+    target = _PLUGIN_DIR / rel_path
+    if not target.exists():
+        raise ImportError(f"PhotoFrame: module file not found: {rel_path}")
+    unique_name = f"photoframe_{module_key}"
+    if unique_name in sys.modules:
+        return sys.modules[unique_name]
+    spec = importlib.util.spec_from_file_location(unique_name, target)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"PhotoFrame: cannot create spec for {rel_path}")
+    module = importlib.util.module_from_spec(spec)
+    # Pre-register so decorators can resolve module
+    sys.modules[unique_name] = module
+    try:
+        spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    except Exception as e:  # noqa: BLE001
+        tb = traceback.format_exc()
+        # Cleanup failed registration to avoid poisoning
+        sys.modules.pop(unique_name, None)
+        raise ImportError(f"PhotoFrame: failed importing {rel_path}: {e}\n{tb}") from e
+    return module
 
-# BaseChannel interface for Mimir Platform integration
+# ---------------------------------------------------------------------------
+# MODELS
+try:
+    # Prefer aggregated __init__.py if present
+    models_mod = _import_local("models", "models/__init__.py") if (_PLUGIN_DIR / "models" / "__init__.py").exists() else None
+except Exception as e:  # noqa: BLE001
+    logger.error("[PhotoFrame] Failed loading models package: %s", e)
+    models_mod = None
+
+if models_mod is None:
+    # Fallback: load individual model files (best-effort)
+    try:
+        gallery_model = _import_local("models_gallery", "models/gallery.py")
+        image_model = _import_local("models_image", "models/image.py")
+        settings_model = _import_local("models_settings", "models/settings.py")
+    except Exception as e:  # noqa: BLE001
+        logger.error("[PhotoFrame] Critical: unable to load required model modules: %s", e)
+        raise
+    # Aggregate symbols (guard with getattr to avoid crashing if later additions missing)
+    Gallery = getattr(gallery_model, "Gallery")  # type: ignore
+    GalleryCreate = getattr(gallery_model, "GalleryCreate")  # type: ignore
+    GalleryUpdate = getattr(gallery_model, "GalleryUpdate")  # type: ignore
+    Image = getattr(image_model, "Image")  # type: ignore
+    ImageMetadata = getattr(image_model, "ImageMetadata")  # type: ignore
+    ImageUploadResult = getattr(image_model, "ImageUploadResult")  # type: ignore
+    ImageBatchUploadResult = getattr(image_model, "ImageBatchUploadResult")  # type: ignore
+    ChannelSettings = getattr(settings_model, "ChannelSettings")  # type: ignore
+    GallerySettings = getattr(settings_model, "GallerySettings")  # type: ignore
+    SettingsManager = getattr(settings_model, "SettingsManager")  # type: ignore
+else:
+    try:
+        Gallery = getattr(models_mod, "Gallery")  # type: ignore
+        GalleryCreate = getattr(models_mod, "GalleryCreate")  # type: ignore
+        GalleryUpdate = getattr(models_mod, "GalleryUpdate")  # type: ignore
+        Image = getattr(models_mod, "Image")  # type: ignore
+        ImageMetadata = getattr(models_mod, "ImageMetadata")  # type: ignore
+        ImageUploadResult = getattr(models_mod, "ImageUploadResult")  # type: ignore
+        ImageBatchUploadResult = getattr(models_mod, "ImageBatchUploadResult")  # type: ignore
+        ChannelSettings = getattr(models_mod, "ChannelSettings")  # type: ignore
+        GallerySettings = getattr(models_mod, "GallerySettings")  # type: ignore
+        SettingsManager = getattr(models_mod, "SettingsManager")  # type: ignore
+    except Exception as e:  # noqa: BLE001
+        logger.error("[PhotoFrame] Failed binding model attributes: %s", e)
+        raise
+
+# ---------------------------------------------------------------------------
+# SERVICES
+try:
+    gallery_service_mod = _import_local("service_gallery", "services/gallery_service.py")
+    image_service_mod = _import_local("service_image", "services/image_service.py")
+    rendering_service_mod = _import_local("service_rendering", "services/rendering_service.py")
+    storage_service_mod = _import_local("service_storage", "services/storage_service.py")
+    GalleryService = getattr(gallery_service_mod, "GalleryService")  # type: ignore
+    ImageService = getattr(image_service_mod, "ImageService")  # type: ignore
+    RenderingService = getattr(rendering_service_mod, "RenderingService")  # type: ignore
+    StorageService = getattr(storage_service_mod, "StorageService")  # type: ignore
+except Exception as e:  # noqa: BLE001
+    logger.error("[PhotoFrame] Failed loading service modules: %s", e)
+    raise
+
+# ---------------------------------------------------------------------------
+# ROUTES (individual modules exposing factory functions)
+try:
+    images_routes_mod = _import_local("routes_images", "routes/images.py")
+    galleries_routes_mod = _import_local("routes_galleries", "routes/galleries.py")
+    settings_routes_mod = _import_local("routes_settings", "routes/settings.py")
+    assets_routes_mod = _import_local("routes_assets", "routes/assets.py")
+    admin_routes_mod = _import_local("routes_admin", "routes/admin.py")
+    # Optional legacy or subchannel settings modules
+    legacy_assets_factory = getattr(assets_routes_mod, "create_legacy_assets_router", None)
+    create_images_router = getattr(images_routes_mod, "create_images_router")  # type: ignore
+    create_galleries_router = getattr(galleries_routes_mod, "create_galleries_router")  # type: ignore
+    create_settings_router = getattr(settings_routes_mod, "create_settings_router")  # type: ignore
+    create_assets_router = getattr(assets_routes_mod, "create_assets_router")  # type: ignore
+    create_legacy_assets_router = legacy_assets_factory if legacy_assets_factory else (lambda *a, **k: APIRouter())
+    create_admin_router = getattr(admin_routes_mod, "create_admin_router")  # type: ignore
+    # Subchannel settings (may be in settings or separate file)
+    create_subchannel_settings_router = getattr(settings_routes_mod, "create_subchannel_settings_router", lambda *a, **k: APIRouter())  # type: ignore
+except Exception as e:  # noqa: BLE001
+    logger.error("[PhotoFrame] Failed loading route modules: %s", e)
+    raise
+
+# ---------------------------------------------------------------------------
+# UTILS
+try:
+    image_processor_mod = _import_local("utils_image_processor", "utils/image_processor.py")
+    file_metadata_mod = _import_local("utils_file_metadata", "utils/file_metadata.py")
+    ImageProcessor = getattr(image_processor_mod, "ImageProcessor")  # type: ignore
+    FileMetadataManager = getattr(file_metadata_mod, "FileMetadataManager")  # type: ignore
+except Exception as e:  # noqa: BLE001
+    logger.error("[PhotoFrame] Failed loading utility modules: %s", e)
+    raise
 class BaseChannel:
     """
     Abstract base class for Mimir Platform channels with sub-channel support
@@ -221,11 +296,12 @@ class PhotoFrameChannel(BaseChannel):
         
         # Ensure directories exist
         self._ensure_directories()
-        
-        print(f"✅ Photo Frame Channel initialized:")
-        print(f"   📂 Channel Directory: {self.channel_dir}")
-        print(f"   🆔 Channel ID: {self.id}")
-        print(f"   📡 API Base: /api/channels/{self.id}/")
+        logger.info(
+            "[PhotoFrame] Initialized channel directory=%s id=%s api_base=/api/channels/%s/",
+            self.channel_dir,
+            self.id,
+            self.id,
+        )
     
     def _validate_api_integration(self):
         """Validate that the channel is properly set up for API integration"""
@@ -430,54 +506,67 @@ class PhotoFrameChannel(BaseChannel):
         }
     
     def get_router(self) -> APIRouter:
-        """Return FastAPI router for channel-specific endpoints"""
-        router = APIRouter()
-        
-        # NEW ROUTES ARCHITECTURE - ACTIVATED!
-        # Include all route modules with dependency injection
-        router.include_router(create_images_router(
-            self.image_service, self.gallery_service, self.storage_service, 
-            self.metadata, self.image_processor
-        ))
-        router.include_router(create_galleries_router(
-            self.gallery_service, self.image_service, self.storage_service
-        ))
-        router.include_router(create_settings_router(
-            self.gallery_service, self.storage_service, self.settings_manager, 
-            self._config
-        ))
-        router.include_router(create_subchannel_settings_router(
-            self.gallery_service, self.settings_manager
-        ))
-        router.include_router(create_assets_router(self.storage_service, self.channel_dir))
-        router.include_router(create_legacy_assets_router(self.storage_service, self.channel_dir))
-        router.include_router(create_admin_router(
-            self.image_service, self.gallery_service, self.storage_service,
-            self.rendering_service, self.settings_manager, self.metadata
-        ))
+        """Return FastAPI router for channel-specific endpoints (hardened).
 
-        # --- Feature Detection Endpoints (for platform probing of channel capabilities) ---
-        @router.get("/test")
-        async def test_get():  # noqa: D401
-            return JSONResponse({
-                "success": True,
-                "id": self.id,
-                "message": "Photo Frame channel responsive",
-                "supports_subchannels": self.gallery_service is not None,
-                "total_images": len(self.metadata.get_all_images())
-            })
+        Adds defensive try/except so a route construction failure is surfaced
+        as a clear log + preserved in self.last_error for manifest diagnostics.
+        """
+        try:  # noqa: C901 (router assembly verbosity is acceptable here)
+            router = APIRouter()
 
-        @router.post("/test")
-        async def test_post():  # noqa: D401
-            return JSONResponse({
-                "success": True,
-                "id": self.id,
-                "message": "Photo Frame channel responsive",
-                "supports_subchannels": self.gallery_service is not None,
-                "total_images": len(self.metadata.get_all_images())
-            })
-        
-        return router
+            # Include all route modules with dependency injection
+            router.include_router(create_images_router(
+                self.image_service, self.gallery_service, self.storage_service,
+                self.metadata, self.image_processor
+            ))
+            router.include_router(create_galleries_router(
+                self.gallery_service, self.image_service, self.storage_service
+            ))
+            router.include_router(create_settings_router(
+                self.gallery_service, self.storage_service, self.settings_manager,
+                self._config
+            ))
+            router.include_router(create_subchannel_settings_router(
+                self.gallery_service, self.settings_manager
+            ))
+            router.include_router(create_assets_router(self.storage_service, self.channel_dir))
+            router.include_router(create_legacy_assets_router(self.storage_service, self.channel_dir))
+            router.include_router(create_admin_router(
+                self.image_service, self.gallery_service, self.storage_service,
+                self.rendering_service, self.settings_manager, self.metadata
+            ))
+
+            # Lightweight feature probe endpoints
+            @router.get("/test")
+            async def test_get():  # type: ignore
+                return JSONResponse({
+                    "success": True,
+                    "id": self.id,
+                    "message": "Photo Frame channel responsive",
+                    "supports_subchannels": True,
+                    "total_images": len(self.metadata.get_all_images())
+                })
+
+            @router.post("/test")
+            async def test_post():  # type: ignore
+                return JSONResponse({
+                    "success": True,
+                    "id": self.id,
+                    "message": "Photo Frame channel responsive",
+                    "supports_subchannels": True,
+                    "total_images": len(self.metadata.get_all_images())
+                })
+
+            logger.info(
+                "[PhotoFrame] Router built subchannels=%d images=%d",
+                len(self.get_subchannels()),
+                len(self.metadata.get_all_images()),
+            )
+            return router
+        except Exception as e:  # noqa: BLE001
+            self.last_error = f"router_build_failed:{e}"
+            logger.error("[PhotoFrame] Router build failed: %s", e)
+            raise
         
     
     async def _regenerate_all_thumbnails(self):
@@ -1156,18 +1245,13 @@ class PhotoFrameChannel(BaseChannel):
     # =========================================================================
     
     def get_manifest(self) -> Dict[str, Any]:
-        """
-        Get channel manifest with capabilities for embedded plugin architecture
-        
-        Returns:
-            Dictionary with channel capabilities and configuration
-        """
-        try:
+        """Return channel manifest with health + diagnostics for platform discovery."""
+        try:  # noqa: C901
             galleries = self.gallery_service.get_all_galleries()
-            
-            return {
+            healthy = self.last_error is None
+            manifest = {
                 "id": "com.epaperframe.photoframe",
-                "name": "Photo Frame Channel", 
+                "name": "Photo Frame Channel",
                 "version": "1.0.0",
                 "description": "Gallery-based photo slideshow with intelligent image management",
                 "capabilities": {
@@ -1194,20 +1278,33 @@ class PhotoFrameChannel(BaseChannel):
                     }
                 },
                 "galleries": [
-                    {
-                        "id": gallery.id,
-                        "name": gallery.name, 
-                        "image_count": gallery.image_count
-                    } for gallery in galleries
+                    {"id": g.id, "name": g.name, "image_count": g.image_count} for g in galleries
                 ],
-                "status": self.get_status()
+                "status": self.get_status(),
+                "healthy": healthy,
+                "diagnostics": {
+                    "last_error": self.last_error,
+                    "image_count": len(self.metadata.get_all_images()),
+                    "cache_entries": len(self._render_cache),
+                    "last_update": self.last_update.isoformat() if self.last_update else None,
+                },
             }
-        except Exception as e:
+            logger.info(
+                "[PhotoFrame] Manifest served healthy=%s galleries=%d images=%d cache=%d",  # noqa: G004
+                healthy,
+                len(galleries),
+                len(self.metadata.get_all_images()),
+                len(self._render_cache),
+            )
+            return manifest
+        except Exception as e:  # noqa: BLE001
+            logger.error("[PhotoFrame] Manifest generation failed: %s", e)
             return {
                 "id": "com.epaperframe.photoframe",
                 "name": "Photo Frame Channel",
+                "healthy": False,
                 "error": str(e),
-                "healthy": False
+                "diagnostics": {"last_error": str(e)},
             }
     
     async def request_image(self, request_data: Dict[str, Any] = None) -> Dict[str, Any]:
