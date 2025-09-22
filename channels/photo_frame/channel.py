@@ -170,7 +170,43 @@ finally:
 
 # ---------------------------------------------------------------------------
 # ROUTES (individual modules exposing factory functions)
+# Some legacy route modules still do 'from services import X' / 'from models import Y'.
+# We create temporary per-channel aliases to prevent resolving another plugin's
+# similarly named global modules.
+_prev_services_alias_routes = sys.modules.get("services")
+_prev_models_alias_routes = sys.modules.get("models")
 try:
+    # Inject models alias (again) for route module import phase
+    if models_mod is not None:
+        sys.modules["models"] = models_mod
+    else:
+        temp_models_routes = types.ModuleType("models")
+        for _name, _val in [
+            ("Gallery", Gallery),
+            ("GalleryCreate", GalleryCreate),
+            ("GalleryUpdate", GalleryUpdate),
+            ("Image", Image),
+            ("ImageMetadata", ImageMetadata),
+            ("ImageUploadResult", ImageUploadResult),
+            ("ImageBatchUploadResult", ImageBatchUploadResult),
+            ("ChannelSettings", ChannelSettings),
+            ("GallerySettings", GallerySettings),
+            ("SettingsManager", SettingsManager),
+        ]:
+            setattr(temp_models_routes, _name, _val)
+        sys.modules["models"] = temp_models_routes
+
+    # Inject services alias with service class references
+    temp_services_routes = types.ModuleType("services")
+    for _name, _val in [
+        ("GalleryService", GalleryService),
+        ("ImageService", ImageService),
+        ("RenderingService", RenderingService),
+        ("StorageService", StorageService),
+    ]:
+        setattr(temp_services_routes, _name, _val)
+    sys.modules["services"] = temp_services_routes
+
     images_routes_mod = _import_local("routes_images", "routes/images.py")
     galleries_routes_mod = _import_local("routes_galleries", "routes/galleries.py")
     settings_routes_mod = _import_local("routes_settings", "routes/settings.py")
@@ -189,6 +225,16 @@ try:
 except Exception as e:  # noqa: BLE001
     logger.error("[PhotoFrame] Failed loading route modules: %s", e)
     raise
+finally:
+    # Restore prior modules to avoid polluting global import space
+    if _prev_services_alias_routes is not None:
+        sys.modules["services"] = _prev_services_alias_routes
+    else:
+        sys.modules.pop("services", None)
+    if _prev_models_alias_routes is not None:
+        sys.modules["models"] = _prev_models_alias_routes
+    else:
+        sys.modules.pop("models", None)
 
 # ---------------------------------------------------------------------------
 # UTILS
