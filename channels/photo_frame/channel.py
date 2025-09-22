@@ -42,6 +42,7 @@ import sys
 import importlib.util
 import traceback
 import logging
+import types
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -127,8 +128,28 @@ else:
         raise
 
 # ---------------------------------------------------------------------------
-# SERVICES
-try:
+# SERVICES (with isolated 'models' alias injection to prevent cross-channel collisions)
+_prev_models_alias = sys.modules.get("models")
+try:  # Temporarily map 'models' to this channel's model definitions so service files using 'from models import ...' resolve locally
+    if models_mod is not None:
+        sys.modules["models"] = models_mod
+    else:
+        temp_models = types.ModuleType("models")
+        for _name, _val in [
+            ("Gallery", Gallery),
+            ("GalleryCreate", GalleryCreate),
+            ("GalleryUpdate", GalleryUpdate),
+            ("Image", Image),
+            ("ImageMetadata", ImageMetadata),
+            ("ImageUploadResult", ImageUploadResult),
+            ("ImageBatchUploadResult", ImageBatchUploadResult),
+            ("ChannelSettings", ChannelSettings),
+            ("GallerySettings", GallerySettings),
+            ("SettingsManager", SettingsManager),
+        ]:
+            setattr(temp_models, _name, _val)
+        sys.modules["models"] = temp_models
+
     gallery_service_mod = _import_local("service_gallery", "services/gallery_service.py")
     image_service_mod = _import_local("service_image", "services/image_service.py")
     rendering_service_mod = _import_local("service_rendering", "services/rendering_service.py")
@@ -140,6 +161,12 @@ try:
 except Exception as e:  # noqa: BLE001
     logger.error("[PhotoFrame] Failed loading service modules: %s", e)
     raise
+finally:
+    # Restore prior 'models' module to avoid affecting other plugins (e.g., spotify_status)
+    if _prev_models_alias is not None:
+        sys.modules["models"] = _prev_models_alias
+    else:
+        sys.modules.pop("models", None)
 
 # ---------------------------------------------------------------------------
 # ROUTES (individual modules exposing factory functions)
