@@ -68,8 +68,13 @@ class RenderingService:
             if subchannel_id and gallery_service and image_service:
                 all_images = image_service.get_all_images()
                 image_record = gallery_service.get_next_image_from_gallery(
-                    subchannel_id, all_images, display_settings
+                    subchannel_id, all_images, display_settings, image_service=image_service
                 )
+                if not image_record:
+                    # Extra diagnostics to understand why gallery selection failed
+                    gallery_obj = gallery_service.get_gallery(subchannel_id)
+                    content_len = len(getattr(gallery_obj, 'content_ids', [])) if gallery_obj else 0
+                    print(f"   [GallerySelect] No image for gallery='{subchannel_id}' content_ids={content_len} enabled_global={len(all_images)}")
             else:
                 image_record = await self._get_next_image(display_settings, image_service)
             
@@ -80,6 +85,10 @@ class RenderingService:
             print(f"   Selected image: {image_record['filename']}")
             
             # Process image for display
+            # Normalize crop_mode synonyms here so downstream processor is consistent
+            if display_settings.get("crop_mode") == "fill":
+                display_settings["crop_mode"] = "smart_crop"
+
             success = await self._process_image_for_display(
                 image_record, output_path, resolution, orientation, display_settings
             )
