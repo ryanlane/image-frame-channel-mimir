@@ -367,7 +367,8 @@ class PhotoFrameChannel(BaseChannel):
             self.metadata,
             self.image_processor
         )
-        self.rendering_service = RenderingService(self.channel_dir)
+        # Pass image_processor so render pipeline can actually crop/resize
+        self.rendering_service = RenderingService(self.channel_dir, self.image_processor)
         self.storage_service = StorageService(self.channel_dir)
 
         # Render cache: (gallery_key, width, height, orientation, crop_mode) -> entry

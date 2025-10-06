@@ -162,24 +162,83 @@ class RenderingService:
                 return False
             
             crop_mode = settings.get("crop_mode", "smart_crop")
-            
+            processed = False
             if self.image_processor:
-                if crop_mode == "smart_crop":
-                    await self.image_processor.process_smart_crop(
-                        source_path, output_path, resolution, image_record
-                    )
-                elif crop_mode == "letterbox":
-                    await self.image_processor.process_letterbox(
-                        source_path, output_path, resolution
-                    )
-                else:  # stretch
-                    await self.image_processor.process_stretch(
-                        source_path, output_path, resolution
-                    )
-            else:
-                # Fallback: simple copy
-                import shutil
-                shutil.copy2(source_path, output_path)
+                try:
+                    if crop_mode == "smart_crop":
+                        await self.image_processor.process_smart_crop(
+                            source_path, output_path, resolution, image_record
+                        )
+                    elif crop_mode == "letterbox":
+                        await self.image_processor.process_letterbox(
+                            source_path, output_path, resolution
+                        )
+                    else:  # stretch
+                        await self.image_processor.process_stretch(
+                            source_path, output_path, resolution
+                        )
+                    processed = True
+                except Exception as e:  # noqa: BLE001
+                    print(f"   ImageProcessor failed ({e}); falling back to internal processor")
+            if not processed:
+                # Internal minimal processor (center-crop cover logic + resize) to guarantee output
+                try:
+                    from PIL import Image
+                    tgt_w, tgt_h = resolution
+                    with Image.open(source_path) as img:
+                        if img.mode not in ("RGB", "L"):
+                            img = img.convert("RGB")
+                        w, h = img.size
+                        target_aspect = tgt_w / tgt_h if tgt_h else 1
+                        current_aspect = w / h if h else target_aspect
+                        if crop_mode in ("smart_crop", "fill", "stretch") and abs(current_aspect - target_aspect) > 0.0001 and crop_mode != "letterbox":
+                            if current_aspect > target_aspect:
+                                # wider -> crop width
+                                new_w = int(h * target_aspect)
+                                x0 = (w - new_w) // 2
+                                img = img.crop((x0, 0, x0 + new_w, h))
+                            else:
+                                new_h = int(w / target_aspect)
+                                y0 = (h - new_h) // 2
+                                img = img.crop((0, y0, w, y0 + new_h))
+                        elif crop_mode == "letterbox":
+                            # Fit inside without crop, then pad
+                            # Compute scaled size
+                            ratio = min(tgt_w / w, tgt_h / h)
+                            new_w = max(1, int(w * ratio))
+                            new_h = max(1, int(h * ratio))
+                            img = img.resize((new_w, new_h), Image.LANCZOS)
+                            # Create background and paste centered
+                            import math
+                            bg = Image.new("RGB", (tgt_w, tgt_h), (0, 0, 0))
+                            off_x = (tgt_w - new_w) // 2
+                            off_y = (tgt_h - new_h) // 2
+                            bg.paste(img, (off_x, off_y))
+                            img = bg
+                        if crop_mode != "letterbox":
+                            if img.size != (tgt_w, tgt_h):
+                                img = img.resize((tgt_w, tgt_h), Image.LANCZOS)
+                        img.save(output_path, "JPEG", quality=90)
+                        processed = True
+                        print(f"   Internal processor produced {output_path} size={tgt_w}x{tgt_h}")
+                except Exception as ie:  # noqa: BLE001
+                    print(f"   Internal processing failed ({ie}); copying original")
+                    import shutil
+                    shutil.copy2(source_path, output_path)
+                    processed = True
+
+            # Post-process verification: ensure output matches requested resolution
+            try:
+                from PIL import Image
+                tgt_w, tgt_h = resolution
+                with Image.open(output_path) as out_img:
+                    ow, oh = out_img.size
+                    if (ow, oh) != (tgt_w, tgt_h):
+                        print(f"   Adjusting final image size from {ow}x{oh} to {tgt_w}x{tgt_h}")
+                        out_img = out_img.resize((tgt_w, tgt_h), Image.LANCZOS)
+                        out_img.save(output_path, "JPEG", quality=88)
+            except Exception as ve:  # noqa: BLE001
+                print(f"   Verification step failed: {ve}")
             
             return True
             
