@@ -212,6 +212,12 @@ try:
     settings_routes_mod = _import_local("routes_settings", "routes/settings.py")
     assets_routes_mod = _import_local("routes_assets", "routes/assets.py")
     admin_routes_mod = _import_local("routes_admin", "routes/admin.py")
+    # Newly added render (request_image) route module
+    try:
+        render_routes_mod = _import_local("routes_render", "routes/render.py")
+    except Exception as e:  # noqa: BLE001
+        logger.error("[PhotoFrame] Failed loading render route module: %s", e)
+        render_routes_mod = None
     # Optional legacy or subchannel settings modules
     legacy_assets_factory = getattr(assets_routes_mod, "create_legacy_assets_router", None)
     create_images_router = getattr(images_routes_mod, "create_images_router")  # type: ignore
@@ -222,6 +228,8 @@ try:
     create_admin_router = getattr(admin_routes_mod, "create_admin_router")  # type: ignore
     # Subchannel settings (may be in settings or separate file)
     create_subchannel_settings_router = getattr(settings_routes_mod, "create_subchannel_settings_router", lambda *a, **k: APIRouter())  # type: ignore
+    # Render router factory (may be None if import failed)
+    create_render_router = getattr(render_routes_mod, "create_render_router", lambda *a, **k: APIRouter()) if render_routes_mod else (lambda *a, **k: APIRouter())
 except Exception as e:  # noqa: BLE001
     logger.error("[PhotoFrame] Failed loading route modules: %s", e)
     raise
@@ -607,6 +615,10 @@ class PhotoFrameChannel(BaseChannel):
             router.include_router(create_admin_router(
                 self.image_service, self.gallery_service, self.storage_service,
                 self.rendering_service, self.settings_manager, self.metadata
+            ))
+            # request-image rendering endpoint
+            router.include_router(create_render_router(
+                self.rendering_service, self.gallery_service, self.image_service, self.channel_dir
             ))
 
             # Lightweight feature probe endpoints
