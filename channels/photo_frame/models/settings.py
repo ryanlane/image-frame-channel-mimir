@@ -2,14 +2,21 @@
 Settings Data Models for Photo Frame Channel
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
 
 class ChannelSettings:
     """Channel-level settings for photo frame"""
     
     VALID_ORDER_MODES = ["added", "random", "custom"]
-    VALID_CROP_MODES = ["smart_crop", "fit", "fill"]
+    # Supported crop/display modes. Keep UI-friendly names here; rendering maps to internal ops.
+    VALID_CROP_MODES = [
+        "smart_crop",    # content-aware center/cover
+        "fit",           # letterbox/pad
+        "fill",          # alias to smart_crop
+        "opencv-saliency",  # OpenCV saliency-based smart crop
+        "opencv_saliency",  # legacy/alias spelling
+    ]
     VALID_TRANSITIONS = ["fade", "slide", "none"]
     VALID_UNITS = ["days", "hours", "minutes", "seconds"]
 

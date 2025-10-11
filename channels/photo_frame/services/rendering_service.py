@@ -86,8 +86,13 @@ class RenderingService:
             
             # Process image for display
             # Normalize crop_mode synonyms here so downstream processor is consistent
-            if display_settings.get("crop_mode") == "fill":
+            cmode = display_settings.get("crop_mode")
+            if cmode == "fill":
                 display_settings["crop_mode"] = "smart_crop"
+            elif cmode == "fit":
+                display_settings["crop_mode"] = "letterbox"
+            elif cmode == "opencv_saliency":
+                display_settings["crop_mode"] = "opencv-saliency"
 
             success = await self._process_image_for_display(
                 image_record, output_path, resolution, orientation, display_settings
