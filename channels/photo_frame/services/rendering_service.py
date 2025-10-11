@@ -206,7 +206,10 @@ class RenderingService:
                         w, h = img.size
                         target_aspect = tgt_w / tgt_h if tgt_h else 1
                         current_aspect = w / h if h else target_aspect
-                        if crop_mode in ("smart_crop", "fill", "stretch") and abs(current_aspect - target_aspect) > 0.0001 and crop_mode != "letterbox":
+                        # Diagnostics
+                        print(f"   [Internal] mode={crop_mode} src={w}x{h} tgt={tgt_w}x{tgt_h} asp(src)={current_aspect:.4f} asp(tgt)={target_aspect:.4f}")
+
+                        if crop_mode in ("smart_crop", "fill") and abs(current_aspect - target_aspect) > 0.0001:
                             if current_aspect > target_aspect:
                                 # wider -> crop width
                                 new_w = int(h * target_aspect)
@@ -229,6 +232,20 @@ class RenderingService:
                             off_y = (tgt_h - new_h) // 2
                             bg.paste(img, (off_x, off_y))
                             img = bg
+                        elif crop_mode == "stretch":
+                            # Only stretch if explicitly required
+                            img = img.resize((tgt_w, tgt_h), Image.LANCZOS)
+                        else:
+                            # Default to cover-style crop (no distort)
+                            if abs(current_aspect - target_aspect) > 0.0001:
+                                if current_aspect > target_aspect:
+                                    new_w = int(h * target_aspect)
+                                    x0 = (w - new_w) // 2
+                                    img = img.crop((x0, 0, x0 + new_w, h))
+                                else:
+                                    new_h = int(w / target_aspect)
+                                    y0 = (h - new_h) // 2
+                                    img = img.crop((0, y0, w, y0 + new_h))
                         if crop_mode != "letterbox":
                             if img.size != (tgt_w, tgt_h):
                                 img = img.resize((tgt_w, tgt_h), Image.LANCZOS)

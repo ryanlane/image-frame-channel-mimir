@@ -58,8 +58,19 @@ class ImageProcessor:
 
     async def render_letterbox(self, source_path, output_path, resolution):
         with Image.open(source_path) as img:
-            thumb = ImageOps.pad(img, resolution, color="black")
-            thumb.save(output_path)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            tgt_w, tgt_h = resolution
+            w, h = img.size
+            ratio = min(tgt_w / max(1, w), tgt_h / max(1, h))
+            new_w = max(1, int(round(w * ratio)))
+            new_h = max(1, int(round(h * ratio)))
+            resized = img.resize((new_w, new_h), Image.LANCZOS)
+            bg = Image.new("RGB", (tgt_w, tgt_h), (0, 0, 0))
+            off_x = (tgt_w - new_w) // 2
+            off_y = (tgt_h - new_h) // 2
+            bg.paste(resized, (off_x, off_y))
+            bg.save(output_path, "JPEG", quality=90)
 
     async def render_stretch(self, source_path, output_path, resolution):
         with Image.open(source_path) as img:
