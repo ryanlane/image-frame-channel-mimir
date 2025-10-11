@@ -154,20 +154,26 @@ class ImageCard extends HTMLElement {
         }
         .image-thumbnail {
           width: 100%;
-          height: 150px;
+          /* Maintain a square box regardless of card width */
+          aspect-ratio: 1 / 1;
           background-color: #e9ecef;
           position: relative;
+          overflow: hidden;
         }
         .image-thumbnail img {
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          /* Fit entire image inside the square while preserving aspect ratio */
+          object-fit: contain;
+          object-position: center center;
+          background-color: #e9ecef;
         }
         .thumbnail-fallback {
           display: none;
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          object-fit: contain;
+          object-position: center center;
         }
         .thumbnail-placeholder {
           display: none;

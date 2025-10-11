@@ -182,9 +182,15 @@ class RenderingService:
                         await self.image_processor.process_letterbox(
                             source_path, output_path, resolution
                         )
-                    else:  # stretch
+                    elif crop_mode == "stretch":
+                        # Explicit stretch requested (will distort). Not exposed in UI by default.
                         await self.image_processor.process_stretch(
                             source_path, output_path, resolution
+                        )
+                    else:
+                        # Safe default: smart crop (preserves aspect ratio)
+                        await self.image_processor.process_smart_crop(
+                            source_path, output_path, resolution, image_record
                         )
                     processed = True
                 except Exception as e:  # noqa: BLE001
@@ -242,9 +248,17 @@ class RenderingService:
                 with Image.open(output_path) as out_img:
                     ow, oh = out_img.size
                     if (ow, oh) != (tgt_w, tgt_h):
-                        print(f"   Adjusting final image size from {ow}x{oh} to {tgt_w}x{tgt_h}")
-                        out_img = out_img.resize((tgt_w, tgt_h), Image.LANCZOS)
-                        out_img.save(output_path, "JPEG", quality=88)
+                        # Adjust without distorting: scale to fit and pad (letterbox)
+                        print(f"   Adjusting final image size from {ow}x{oh} to {tgt_w}x{tgt_h} (no-distort fit)")
+                        ratio = min(tgt_w / max(1, ow), tgt_h / max(1, oh))
+                        new_w = max(1, int(round(ow * ratio)))
+                        new_h = max(1, int(round(oh * ratio)))
+                        resized = out_img.resize((new_w, new_h), Image.LANCZOS)
+                        bg = Image.new("RGB", (tgt_w, tgt_h), (0, 0, 0))
+                        off_x = (tgt_w - new_w) // 2
+                        off_y = (tgt_h - new_h) // 2
+                        bg.paste(resized, (off_x, off_y))
+                        bg.save(output_path, "JPEG", quality=88)
             except Exception as ve:  # noqa: BLE001
                 print(f"   Verification step failed: {ve}")
             
