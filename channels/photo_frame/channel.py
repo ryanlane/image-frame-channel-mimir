@@ -820,30 +820,42 @@ class PhotoFrameChannel(BaseChannel):
             "crop_height": 100
         }
         
-        # Use existing processing logic but with placeholder
-        crop_mode = settings.get("crop_mode", "smart_crop")
-        
-        if crop_mode == "smart_crop":
-            await self.image_processor.render_with_crop(
-                source_path=placeholder_path,
-                output_path=output_path,
-                resolution=resolution,
-                crop_x=0,
-                crop_y=0,
-                crop_width=100,
-                crop_height=100
-            )
+        # Use aspect-safe processing logic
+        crop_mode = self._canonicalize_crop_mode(settings.get("crop_mode"))
+        if crop_mode in ("opencv-saliency",):
+            if hasattr(self.image_processor, "process_opencv_saliency"):
+                await self.image_processor.process_opencv_saliency(
+                    placeholder_path,
+                    output_path,
+                    resolution,
+                    placeholder_record,
+                    settings,
+                )
+            else:
+                await self.image_processor.process_smart_crop(
+                    placeholder_path,
+                    output_path,
+                    resolution,
+                    placeholder_record,
+                )
         elif crop_mode == "letterbox":
-            await self.image_processor.render_letterbox(
-                source_path=placeholder_path,
-                output_path=output_path,
-                resolution=resolution
+            await self.image_processor.process_letterbox(
+                placeholder_path,
+                output_path,
+                resolution,
             )
-        else:  # "stretch"
-            await self.image_processor.render_stretch(
-                source_path=placeholder_path,
-                output_path=output_path,
-                resolution=resolution
+        elif crop_mode == "stretch":
+            await self.image_processor.process_stretch(
+                placeholder_path,
+                output_path,
+                resolution,
+            )
+        else:
+            await self.image_processor.process_smart_crop(
+                placeholder_path,
+                output_path,
+                resolution,
+                placeholder_record,
             )
     
     async def _process_image_for_display(
@@ -858,32 +870,42 @@ class PhotoFrameChannel(BaseChannel):
         source_path = self.channel_dir / "assets" / "uploads" / image_record["filename"]
         output_path = self.channel_dir / self.config["current_image"]
         
-        crop_mode = settings.get("crop_mode", "smart_crop")
-        
-        if crop_mode == "smart_crop":
-            # Use stored crop coordinates
-            await self.image_processor.render_with_crop(
-                source_path=source_path,
-                output_path=output_path,
-                resolution=resolution,
-                crop_x=image_record.get("crop_x", 0),
-                crop_y=image_record.get("crop_y", 0),
-                crop_width=image_record.get("crop_width", 100),
-                crop_height=image_record.get("crop_height", 100)
-            )
+        crop_mode = self._canonicalize_crop_mode(settings.get("crop_mode"))
+
+        if crop_mode in ("opencv-saliency",):
+            if hasattr(self.image_processor, "process_opencv_saliency"):
+                await self.image_processor.process_opencv_saliency(
+                    source_path,
+                    output_path,
+                    resolution,
+                    image_record,
+                    settings,
+                )
+            else:
+                await self.image_processor.process_smart_crop(
+                    source_path,
+                    output_path,
+                    resolution,
+                    image_record,
+                )
         elif crop_mode == "letterbox":
-            # Preserve aspect ratio with borders
-            await self.image_processor.render_letterbox(
-                source_path=source_path,
-                output_path=output_path,
-                resolution=resolution
+            await self.image_processor.process_letterbox(
+                source_path,
+                output_path,
+                resolution,
             )
-        else:  # "stretch"
-            # Stretch to fill (may distort)
-            await self.image_processor.render_stretch(
-                source_path=source_path,
-                output_path=output_path,
-                resolution=resolution
+        elif crop_mode == "stretch":
+            await self.image_processor.process_stretch(
+                source_path,
+                output_path,
+                resolution,
+            )
+        else:  # smart_crop default
+            await self.image_processor.process_smart_crop(
+                source_path,
+                output_path,
+                resolution,
+                image_record,
             )
         
         return str(output_path)
@@ -1418,7 +1440,19 @@ class PhotoFrameChannel(BaseChannel):
 
             gallery_id = data.get("gallery_id")
             settings_raw = data.get("settings", {})
+            # Normalize incoming settings
             settings_norm = self._normalize_settings(settings_raw)
+            # If a gallery is specified, merge its saved settings (caller overrides gallery)
+            if gallery_id:
+                try:
+                    gallery_saved = self.gallery_service.get_gallery_settings(gallery_id)
+                except Exception:  # noqa: BLE001
+                    gallery_saved = {}
+                gallery_norm = self._normalize_settings(gallery_saved or {})
+                # Caller-provided settings take precedence over gallery defaults
+                tmp = dict(gallery_norm)
+                tmp.update(settings_norm)
+                settings_norm = tmp
 
             distribution_mode = settings_norm.get("distribution", "new")
             if distribution_mode not in ("current", "new"):
@@ -1651,11 +1685,17 @@ class PhotoFrameChannel(BaseChannel):
         if not value:
             return "smart_crop"
         v = str(value).lower().replace("-", "_")
+        # Fit -> pad/letterbox (no distortion)
         if v in ("fit", "fit_to_screen", "letterbox", "fit_screen"):
             return "letterbox"
-        if v in ("fill", "fill_screen", "cover", "stretch_to_fill"):
-            return "stretch"
-        if v not in ("smart_crop", "letterbox", "stretch"):
+        # Fill/Cover should be a content-preserving crop (smart_crop), NOT stretch
+        if v in ("fill", "fill_screen", "cover"):
+            return "smart_crop"
+        # OpenCV saliency mode canonicalization
+        if v in ("opencv_saliency", "opencv", "saliency"):
+            return "opencv-saliency"
+        # Only allow these internal modes
+        if v not in ("smart_crop", "letterbox", "stretch", "opencv-saliency"):
             return "smart_crop"
         return v
 
