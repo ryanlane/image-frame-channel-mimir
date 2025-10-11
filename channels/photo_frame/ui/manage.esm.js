@@ -746,6 +746,7 @@ class XPhotoFrameManager extends HTMLElement {
                 <label for="crop-mode">Crop Mode:</label>
                 <select id="crop-mode">
                   <option value="smart_crop" ${gallerySettings.crop_mode === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
+                  <option value="opencv-saliency" ${gallerySettings.crop_mode === 'opencv-saliency' || gallerySettings.crop_mode === 'opencv_saliency' ? 'selected' : ''}>OpenCV Saliency (Smart)</option>
                   <option value="fit" ${gallerySettings.crop_mode === 'fit' ? 'selected' : ''}>Fit to Screen</option>
                   <option value="fill" ${gallerySettings.crop_mode === 'fill' ? 'selected' : ''}>Fill Screen</option>
                 </select>
