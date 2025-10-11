@@ -936,7 +936,11 @@ class XPhotoFrameManager extends HTMLElement {
 
       // Get photo frame settings for this gallery
       const orderMode = modal.querySelector('#order-mode').value;
-      const cropMode = modal.querySelector('#crop-mode').value;
+      // Normalize crop mode to canonical values before saving
+      let cropMode = modal.querySelector('#crop-mode').value;
+      if (cropMode === 'opencv_saliency') {
+        cropMode = 'opencv-saliency';
+      }
   // Update interval inputs removed (external scheduler handles cadence)
 
       // Save gallery properties
