@@ -747,6 +747,14 @@ class XPhotoFrameManager extends HTMLElement {
                 <select id="crop-mode">
                   <option value="smart_crop" ${gallerySettings.crop_mode === 'smart_crop' ? 'selected' : ''}>Smart Crop</option>
                   <option value="opencv-saliency" ${gallerySettings.crop_mode === 'opencv-saliency' || gallerySettings.crop_mode === 'opencv_saliency' ? 'selected' : ''}>OpenCV Saliency (Smart)</option>
+                  <option value="face-portrait" ${(
+                    gallerySettings.crop_mode === 'face-portrait' ||
+                    gallerySettings.crop_mode === 'face_portrait' ||
+                    gallerySettings.crop_mode === 'portrait' ||
+                    gallerySettings.crop_mode === 'people' ||
+                    gallerySettings.crop_mode === 'face' ||
+                    gallerySettings.crop_mode === 'faces'
+                  ) ? 'selected' : ''}>Face Portrait (Detect)</option>
                   <option value="fit" ${gallerySettings.crop_mode === 'fit' ? 'selected' : ''}>Fit to Screen</option>
                   <option value="fill" ${gallerySettings.crop_mode === 'fill' ? 'selected' : ''}>Fill Screen</option>
                 </select>
@@ -938,8 +946,12 @@ class XPhotoFrameManager extends HTMLElement {
       const orderMode = modal.querySelector('#order-mode').value;
       // Normalize crop mode to canonical values before saving
       let cropMode = modal.querySelector('#crop-mode').value;
+      // Normalize aliases to canonical values used by backend
       if (cropMode === 'opencv_saliency') {
         cropMode = 'opencv-saliency';
+      }
+      if (['face_portrait','portrait','people','face','faces'].includes(cropMode)) {
+        cropMode = 'face-portrait';
       }
   // Update interval inputs removed (external scheduler handles cadence)
 

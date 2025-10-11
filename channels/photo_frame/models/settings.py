@@ -16,6 +16,8 @@ class ChannelSettings:
         "fill",          # alias to smart_crop
         "opencv-saliency",  # OpenCV saliency-based smart crop
         "opencv_saliency",  # legacy/alias spelling
+        "face-portrait",    # Face detection portrait crop
+        "face_portrait",    # alias
     ]
     VALID_TRANSITIONS = ["fade", "slide", "none"]
     VALID_UNITS = ["days", "hours", "minutes", "seconds"]

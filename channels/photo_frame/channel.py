@@ -850,6 +850,22 @@ class PhotoFrameChannel(BaseChannel):
                 output_path,
                 resolution,
             )
+        elif crop_mode == "face-portrait":
+            if hasattr(self.image_processor, "process_face_portrait"):
+                await self.image_processor.process_face_portrait(
+                    placeholder_path,
+                    output_path,
+                    resolution,
+                    placeholder_record,
+                    settings,
+                )
+            else:
+                await self.image_processor.process_smart_crop(
+                    placeholder_path,
+                    output_path,
+                    resolution,
+                    placeholder_record,
+                )
         else:
             await self.image_processor.process_smart_crop(
                 placeholder_path,
@@ -900,6 +916,22 @@ class PhotoFrameChannel(BaseChannel):
                 output_path,
                 resolution,
             )
+        elif crop_mode == "face-portrait":
+            if hasattr(self.image_processor, "process_face_portrait"):
+                await self.image_processor.process_face_portrait(
+                    source_path,
+                    output_path,
+                    resolution,
+                    image_record,
+                    settings,
+                )
+            else:
+                await self.image_processor.process_smart_crop(
+                    source_path,
+                    output_path,
+                    resolution,
+                    image_record,
+                )
         else:  # smart_crop default
             await self.image_processor.process_smart_crop(
                 source_path,
@@ -1694,8 +1726,11 @@ class PhotoFrameChannel(BaseChannel):
         # OpenCV saliency mode canonicalization
         if v in ("opencv_saliency", "opencv", "saliency"):
             return "opencv-saliency"
+        # Face portrait mode canonicalization
+        if v in ("face", "faces", "portrait", "people", "face_portrait"):
+            return "face-portrait"
         # Only allow these internal modes
-        if v not in ("smart_crop", "letterbox", "stretch", "opencv-saliency"):
+        if v not in ("smart_crop", "letterbox", "stretch", "opencv-saliency", "face-portrait"):
             return "smart_crop"
         return v
 

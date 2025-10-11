@@ -367,3 +367,202 @@ class ImageProcessor:
                 img_cropped = img_cropped.convert("RGB")
             img_out = img_cropped.resize((tgt_w, tgt_h), Image.LANCZOS)
             img_out.save(output_path, "JPEG", quality=90)
+
+    # --- Face-portrait crop (MediaPipe/face_recognition with graceful fallback) ---
+    async def process_face_portrait(
+        self,
+        source_path: Path,
+        output_path: Path,
+        resolution: Tuple[int, int],
+        image_record: Dict[str, Any],
+        settings: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Crop for people portraits, prioritizing faces with a bit of headroom.
+
+        Detection stack (first available wins):
+        1) MediaPipe FaceDetection (fast, robust)
+        2) face_recognition (HOG/CNN)
+        3) OpenCV Haar cascades (traditional)
+
+        Fallback to saliency or smart_crop if no faces found or deps missing.
+
+        Tunables (optional via settings):
+        - face_min_size_frac: min face box size vs shorter side (default 0.06)
+        - face_headroom_frac: extra top headroom vs face height (default 0.25)
+        - face_merge_iou: merge nearby faces into a single crop (default 0.15)
+        - face_group_mode: 'largest' | 'all' (default 'largest')
+        """
+        settings = settings or {}
+        try:
+            # Load base image
+            with Image.open(source_path) as pil_img:
+                try:
+                    pil_img = ImageOps.exif_transpose(pil_img)
+                except Exception:
+                    pass
+                if pil_img.mode not in ("RGB", "L"):
+                    pil_img = pil_img.convert("RGB")
+                w, h = pil_img.size
+
+            tgt_w, tgt_h = resolution
+            target_aspect = (tgt_w / tgt_h) if tgt_h else (w / max(h, 1))
+            import numpy as np  # type: ignore
+            import cv2  # type: ignore
+
+            np_img = np.array(pil_img)
+            bgr = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
+
+            faces: list[tuple[int,int,int,int]] = []  # x,y,w,h
+
+            # 1) Try MediaPipe
+            try:
+                import mediapipe as mp  # type: ignore
+                mp_fd = mp.solutions.face_detection
+                with mp_fd.FaceDetection(model_selection=1, min_detection_confidence=0.4) as fd:
+                    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                    res = fd.process(rgb)
+                    if res and res.detections:
+                        for d in res.detections:
+                            bbox = d.location_data.relative_bounding_box
+                            x = int(bbox.xmin * w)
+                            y = int(bbox.ymin * h)
+                            ww = int(bbox.width * w)
+                            hh = int(bbox.height * h)
+                            faces.append((x, y, ww, hh))
+            except Exception:
+                pass
+
+            # 2) Try face_recognition if no faces
+            if not faces:
+                try:
+                    import face_recognition  # type: ignore
+                    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                    locs = face_recognition.face_locations(rgb, model="hog")
+                    for top, right, bottom, left in locs:
+                        x, y, ww, hh = int(left), int(top), int(right-left), int(bottom-top)
+                        faces.append((x, y, ww, hh))
+                except Exception:
+                    pass
+
+            # 3) Haar cascade fallback
+            if not faces:
+                try:
+                    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+                    gray = cv2.equalizeHist(gray)
+                    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+                    det = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+                    for (x, y, ww, hh) in det:
+                        faces.append((int(x), int(y), int(ww), int(hh)))
+                except Exception:
+                    pass
+
+            # No faces: fallback to saliency or smart crop
+            if not faces:
+                if hasattr(self, "process_opencv_saliency"):
+                    await self.process_opencv_saliency(source_path, output_path, resolution, image_record, settings)
+                else:
+                    await self.process_smart_crop(source_path, output_path, resolution, image_record)
+                return
+
+            # Filter tiny detections
+            min_frac = float(settings.get("face_min_size_frac", 0.06))
+            min_size = int(min(w, h) * min_frac)
+            faces = [f for f in faces if min(f[2], f[3]) >= min_size]
+            if not faces:
+                await self.process_smart_crop(source_path, output_path, resolution, image_record)
+                return
+
+            # Optionally merge faces (simple IoU-based merge)
+            def iou(a, b) -> float:
+                ax, ay, aw, ah = a
+                bx, by, bw, bh = b
+                Ax1, Ay1, Ax2, Ay2 = ax, ay, ax+aw, ay+ah
+                Bx1, By1, Bx2, By2 = bx, by, bx+bw, by+bh
+                inter_x1, inter_y1 = max(Ax1, Bx1), max(Ay1, By1)
+                inter_x2, inter_y2 = min(Ax2, Bx2), min(Ay2, By2)
+                if inter_x2 <= inter_x1 or inter_y2 <= inter_y1:
+                    return 0.0
+                inter = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
+                areaA = aw * ah
+                areaB = bw * bh
+                return inter / max(1.0, (areaA + areaB - inter))
+
+            group_mode = str(settings.get("face_group_mode", "largest")).lower()
+            merge_iou = float(settings.get("face_merge_iou", 0.15))
+            kept: list[tuple[int,int,int,int]] = []
+            for f in faces:
+                merged = False
+                for i in range(len(kept)):
+                    if iou(kept[i], f) >= merge_iou:
+                        # Merge into union box
+                        x1 = min(kept[i][0], f[0])
+                        y1 = min(kept[i][1], f[1])
+                        x2 = max(kept[i][0] + kept[i][2], f[0] + f[2])
+                        y2 = max(kept[i][1] + kept[i][3], f[1] + f[3])
+                        kept[i] = (x1, y1, x2-x1, y2-y1)
+                        merged = True
+                        break
+                if not merged:
+                    kept.append(f)
+            faces = kept
+
+            # Select box
+            if group_mode == "all" and len(faces) > 1:
+                # Enclose all faces
+                x1 = min(x for x, y, ww, hh in faces)
+                y1 = min(y for x, y, ww, hh in faces)
+                x2 = max(x+ww for x, y, ww, hh in faces)
+                y2 = max(y+hh for x, y, ww, hh in faces)
+            else:
+                # Largest face
+                faces.sort(key=lambda f: f[2]*f[3], reverse=True)
+                x, y, ww, hh = faces[0]
+                x1, y1, x2, y2 = x, y, x+ww, y+hh
+
+            # Add headroom
+            headroom = float(settings.get("face_headroom_frac", 0.25))
+            add_top = int((y2 - y1) * headroom)
+            y1 = max(0, y1 - add_top)
+
+            # Expand to match target aspect (cover-style) centered on face box
+            box_w = x2 - x1
+            box_h = y2 - y1
+            cx = x1 + box_w // 2
+            cy = y1 + box_h // 2
+            if (box_w / box_h) > target_aspect:
+                # too wide -> increase height
+                new_h = int(round(box_w / target_aspect))
+                new_w = box_w
+            else:
+                new_w = int(round(box_h * target_aspect))
+                new_h = box_h
+            x0 = max(0, cx - new_w // 2)
+            y0 = max(0, cy - new_h // 2)
+            x1 = min(w, x0 + new_w)
+            y1 = min(h, y0 + new_h)
+            # Re-adjust if we clipped
+            x0 = max(0, x1 - new_w)
+            y0 = max(0, y1 - new_h)
+            # Final clamp
+            x0 = max(0, min(x0, w - 1))
+            y0 = max(0, min(y0, h - 1))
+            x1 = max(x0 + 1, min(x1, w))
+            y1 = max(y0 + 1, min(y1, h))
+
+            with Image.open(source_path) as pil_img2:
+                try:
+                    pil_img2 = ImageOps.exif_transpose(pil_img2)
+                except Exception:
+                    pass
+                crop_box = (int(x0), int(y0), int(x1), int(y1))
+                img_cropped = pil_img2.crop(crop_box)
+                if img_cropped.mode not in ("RGB", "L"):
+                    img_cropped = img_cropped.convert("RGB")
+                img_out = img_cropped.resize((tgt_w, tgt_h), Image.LANCZOS)
+                img_out.save(output_path, "JPEG", quality=90)
+        except Exception:
+            # Defensive fallback
+            if hasattr(self, "process_opencv_saliency"):
+                await self.process_opencv_saliency(source_path, output_path, resolution, image_record, settings)
+            else:
+                await self.process_smart_crop(source_path, output_path, resolution, image_record)

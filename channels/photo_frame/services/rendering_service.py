@@ -93,6 +93,8 @@ class RenderingService:
                 display_settings["crop_mode"] = "letterbox"
             elif cmode == "opencv_saliency":
                 display_settings["crop_mode"] = "opencv-saliency"
+            elif str(cmode).replace("-", "_") in {"face_portrait", "portrait", "faces", "people"}:
+                display_settings["crop_mode"] = "face-portrait"
 
             success = await self._process_image_for_display(
                 image_record, output_path, resolution, orientation, display_settings
@@ -176,6 +178,10 @@ class RenderingService:
                         )
                     elif crop_mode in ("opencv-saliency", "opencv_saliency") and hasattr(self.image_processor, "process_opencv_saliency"):
                         await self.image_processor.process_opencv_saliency(
+                            source_path, output_path, resolution, image_record, settings
+                        )
+                    elif crop_mode == "face-portrait" and hasattr(self.image_processor, "process_face_portrait"):
+                        await self.image_processor.process_face_portrait(
                             source_path, output_path, resolution, image_record, settings
                         )
                     elif crop_mode == "letterbox":
