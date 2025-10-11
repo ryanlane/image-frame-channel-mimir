@@ -17,7 +17,7 @@ Error responses are JSON with an HTTP status (400/404/500) and do not return byt
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Callable, Awaitable
 
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import Response, JSONResponse
@@ -41,11 +41,16 @@ class RenderRoutes:
         gallery_service: GalleryService,
         image_service: ImageService,
         channel_dir,
+        # Optional delegate to the channel instance's async request_image(request_data)
+        # When provided, the HTTP route will call into this method so both
+        # request-image (HTTP) and request_image (plugin API) share identical logic.
+        channel_request_image: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
     ) -> None:
         self.rendering_service = rendering_service
         self.gallery_service = gallery_service
         self.image_service = image_service
         self.channel_dir = channel_dir
+        self.channel_request_image = channel_request_image
 
     # --------------------------- helpers ---------------------------
     def _derive_resolution(self, payload: Dict[str, Any]) -> Tuple[int, int, bool]:
@@ -130,7 +135,61 @@ class RenderRoutes:
                 distribution = self._derive_distribution(payload)
                 gallery_id = self._derive_gallery_id(payload)
 
-                # Call rendering service (returns relative path under channel_dir)
+                # Preferred path: delegate to the channel's request_image for unified logic
+                if self.channel_request_image is not None:
+                    # Ensure settings exist and include resolved resolution/orientation/distribution
+                    req_data: Dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
+                    settings = dict(req_data.get("settings", {}) or {})
+                    settings.setdefault("resolution", [width, height])
+                    settings.setdefault("orientation", orientation)
+                    settings.setdefault("distribution", distribution)
+                    req_data["settings"] = settings
+                    if gallery_id and not req_data.get("gallery_id"):
+                        req_data["gallery_id"] = gallery_id
+
+                    # Ask channel for bytes-first response
+                    req_data.setdefault("include_base64", False)
+
+                    result = await self.channel_request_image(req_data)
+                    if not result or not result.get("success"):
+                        # Map common errors to HTTP codes
+                        detail = (result or {}).get("error") if isinstance(result, dict) else None
+                        status = 404 if detail in {"No images available", "no_content", "Render failed"} else 500
+                        return JSONResponse(status_code=status, content={
+                            "success": False,
+                            "error": detail or "render_failure",
+                        })
+
+                    # Extract bytes (prefer direct bytes; fallback to base64 if present)
+                    content_bytes: Optional[bytes] = result.get("bytes")  # type: ignore[assignment]
+                    if content_bytes is None and isinstance(result.get("image"), str):
+                        import base64 as _b64
+                        try:
+                            content_bytes = _b64.b64decode(result["image"])  # type: ignore[index]
+                        except Exception:
+                            content_bytes = b""
+                    if not content_bytes:
+                        return JSONResponse(status_code=500, content={
+                            "success": False,
+                            "error": "empty_bytes",
+                        })
+
+                    content_type = result.get("content_type") or "image/jpeg"
+                    fingerprint = self._hash_bytes(content_bytes)
+                    res_w = int(result.get("width") or width)
+                    res_h = int(result.get("height") or height)
+                    headers = {
+                        "X-Content-Fingerprint": fingerprint,
+                        "X-Distribution-Mode": (result.get("distribution_mode") or distribution),
+                        "X-Resolution": f"{res_w}x{res_h}",
+                        "Cache-Control": "no-store",
+                    }
+                    if used_fallback:
+                        headers["X-Resolution-Fallback"] = "true"
+
+                    return Response(content=content_bytes, media_type=str(content_type), headers=headers)
+
+                # Fallback path: legacy service-based rendering (kept for backward-compat)
                 rel_path = await self.rendering_service.render_image(
                     resolution=(width, height),
                     orientation=orientation,
@@ -144,7 +203,6 @@ class RenderRoutes:
 
                 absolute_path = Path(self.channel_dir) / rel_path
                 if not absolute_path.exists():
-                    # Treat this as no content
                     return JSONResponse(
                         status_code=404,
                         content={
@@ -154,7 +212,6 @@ class RenderRoutes:
                         },
                     )
 
-                # Read bytes
                 data = absolute_path.read_bytes()
                 fingerprint = self._hash_bytes(data)
 
@@ -189,12 +246,14 @@ def create_render_router(
     gallery_service: GalleryService,
     image_service: ImageService,
     channel_dir,
+    channel_request_image: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
 ) -> APIRouter:
     routes = RenderRoutes(
         rendering_service=rendering_service,
         gallery_service=gallery_service,
         image_service=image_service,
         channel_dir=channel_dir,
+        channel_request_image=channel_request_image,
     )
     return routes.create_router()
 

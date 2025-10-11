@@ -169,6 +169,10 @@ class RenderingService:
                         await self.image_processor.process_smart_crop(
                             source_path, output_path, resolution, image_record
                         )
+                    elif crop_mode in ("opencv-saliency", "opencv_saliency") and hasattr(self.image_processor, "process_opencv_saliency"):
+                        await self.image_processor.process_opencv_saliency(
+                            source_path, output_path, resolution, image_record, settings
+                        )
                     elif crop_mode == "letterbox":
                         await self.image_processor.process_letterbox(
                             source_path, output_path, resolution
@@ -209,7 +213,6 @@ class RenderingService:
                             new_h = max(1, int(h * ratio))
                             img = img.resize((new_w, new_h), Image.LANCZOS)
                             # Create background and paste centered
-                            import math
                             bg = Image.new("RGB", (tgt_w, tgt_h), (0, 0, 0))
                             off_x = (tgt_w - new_w) // 2
                             off_y = (tgt_h - new_h) // 2

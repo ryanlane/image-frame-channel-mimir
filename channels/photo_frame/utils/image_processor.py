@@ -1,6 +1,6 @@
 from PIL import Image, ImageOps
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 class ImageProcessor:
     def __init__(self, upload_dir: Path, thumb_dir: Path = None):
@@ -151,3 +151,154 @@ class ImageProcessor:
         """Create a solid color placeholder image."""
         img = Image.new("RGB", resolution, color)
         img.save(output_path, "JPEG", quality=85)
+
+    # --- New OpenCV-based saliency crop --------------------------------------
+    async def process_opencv_saliency(
+        self,
+        source_path: Path,
+        output_path: Path,
+        resolution: Tuple[int, int],
+        image_record: Dict[str, Any],
+        settings: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Smart crop using a simple OpenCV saliency map + integral-image scan.
+
+        Strategy (fast and dependency-tolerant):
+        - Load with PIL to respect EXIF orientation, convert to numpy (RGB).
+        - Build saliency as a weighted combination of Laplacian magnitude and local variance.
+        - Perform a 1D sliding-window scan that preserves the target aspect ratio while
+          covering the image (like object-fit: cover), maximizing saliency sum.
+        - Crop and resize to the requested resolution.
+
+        Fallback: If OpenCV/Numpy are not available, falls back to process_smart_crop.
+        """
+        try:
+            import numpy as np  # type: ignore
+            import cv2  # type: ignore
+        except Exception:
+            # Graceful fallback to existing smart-crop
+            await self.process_smart_crop(source_path, output_path, resolution, image_record)
+            return
+
+        settings = settings or {}
+
+        # Load with PIL, transpose to honor EXIF, convert to RGB
+        with Image.open(source_path) as pil_img:
+            try:
+                pil_img = ImageOps.exif_transpose(pil_img)
+            except Exception:
+                pass
+            if pil_img.mode not in ("RGB", "L"):
+                pil_img = pil_img.convert("RGB")
+            w, h = pil_img.size
+            # If extremely small or degenerate, fallback
+            if w < 4 or h < 4:
+                await self.process_smart_crop(source_path, output_path, resolution, image_record)
+                return
+            np_img = np.array(pil_img)
+
+        # Convert to BGR/GRAY for OpenCV processing
+        if np_img.ndim == 2:
+            gray = np_img.astype("uint8")
+        else:
+            bgr = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+
+        # Build saliency map: Laplacian magnitude + local variance
+        gray_f = gray.astype("float32")
+        # Laplacian magnitude
+        lap = cv2.Laplacian(gray_f, cv2.CV_32F, ksize=3)
+        lap = cv2.GaussianBlur(cv2.absdiff(lap, 0), (0, 0), 1.0)
+        # Local variance via mean and mean of squares
+        k = int(max(5, round(min(w, h) / 50)))  # kernel adapts to image size
+        if k % 2 == 0:
+            k += 1
+        mean = cv2.GaussianBlur(gray_f, (k, k), 0)
+        mean_sq = cv2.GaussianBlur(gray_f * gray_f, (k, k), 0)
+        var = cv2.max(mean_sq - mean * mean, 0)
+
+        # Normalize to 0..1 and combine
+        def norm01(x: "np.ndarray") -> "np.ndarray":
+            mn, mx = float(x.min()), float(x.max())
+            if mx - mn < 1e-6:
+                return np.zeros_like(x, dtype="float32")
+            return (x - mn) / (mx - mn)
+
+        lap_n = norm01(lap)
+        var_n = norm01(var)
+        sal = 0.6 * lap_n + 0.4 * var_n
+
+        # Optional: small blur to smooth noise
+        sal = cv2.GaussianBlur(sal, (0, 0), sigmaX=1.0)
+
+        tgt_w, tgt_h = resolution
+        target_aspect = (tgt_w / tgt_h) if tgt_h else (w / max(h, 1))
+        img_aspect = (w / h) if h else target_aspect
+
+        # Choose cover-style window dimensions; slide along the other axis
+        if img_aspect > target_aspect:
+            # Image wider than target: use full height, slide horizontally
+            win_h = h
+            win_w = int(round(h * target_aspect))
+            slide_axis = "x"
+            steps = max(1, int(np.clip(round(w / 200), 1, 50)))
+            step = max(1, int(round((w - win_w) / max(1, steps))))
+        else:
+            # Image taller than target: use full width, slide vertically
+            win_w = w
+            win_h = int(round(w / target_aspect))
+            slide_axis = "y"
+            steps = max(1, int(np.clip(round(h / 200), 1, 50)))
+            step = max(1, int(round((h - win_h) / max(1, steps))))
+
+        # Integral image for O(1) window sums
+        sal32 = sal.astype("float32")
+        integral = cv2.integral(sal32)
+
+        def rect_sum(ii: "np.ndarray", x0: int, y0: int, x1: int, y1: int) -> float:
+            # integral image shape is (h+1, w+1)
+            return float(ii[y1, x1] - ii[y0, x1] - ii[y1, x0] + ii[y0, x0])
+
+        best_score = -1.0
+        best_rect = (0, 0, w, h)
+
+        if slide_axis == "x":
+            if w == win_w:
+                xs = [0]
+            else:
+                xs = list(range(0, max(1, w - win_w + 1), step))
+                if xs[-1] != w - win_w:
+                    xs.append(w - win_w)
+            y0, y1 = 0, win_h
+            for x0 in xs:
+                x1 = x0 + win_w
+                s = rect_sum(integral, x0, y0, x1, y1)
+                if s > best_score:
+                    best_score, best_rect = s, (x0, y0, x1, y1)
+        else:
+            if h == win_h:
+                ys = [0]
+            else:
+                ys = list(range(0, max(1, h - win_h + 1), step))
+                if ys[-1] != h - win_h:
+                    ys.append(h - win_h)
+            x0, x1 = 0, win_w
+            for y0 in ys:
+                y1 = y0 + win_h
+                s = rect_sum(integral, x0, y0, x1, y1)
+                if s > best_score:
+                    best_score, best_rect = s, (x0, y0, x1, y1)
+
+        # Crop and resize with PIL for consistent output quality
+        x0, y0, x1, y1 = best_rect
+        with Image.open(source_path) as pil_img2:
+            try:
+                pil_img2 = ImageOps.exif_transpose(pil_img2)
+            except Exception:
+                pass
+            crop_box = (int(x0), int(y0), int(x1), int(y1))
+            img_cropped = pil_img2.crop(crop_box)
+            if img_cropped.mode not in ("RGB", "L"):
+                img_cropped = img_cropped.convert("RGB")
+            img_out = img_cropped.resize((tgt_w, tgt_h), Image.LANCZOS)
+            img_out.save(output_path, "JPEG", quality=90)

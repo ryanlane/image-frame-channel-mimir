@@ -619,7 +619,11 @@ class PhotoFrameChannel(BaseChannel):
             ))
             # request-image rendering endpoint
             router.include_router(create_render_router(
-                self.rendering_service, self.gallery_service, self.image_service, self.channel_dir
+                self.rendering_service,
+                self.gallery_service,
+                self.image_service,
+                self.channel_dir,
+                channel_request_image=self.request_image,
             ))
 
             # Lightweight feature probe endpoints
