@@ -122,10 +122,11 @@ class XPhotoFrameManager extends HTMLElement {
         :host {
           display: block;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          color: var(--color-text, #1A1A1A);
         }
         .manager-container {
           padding: 24px;
-          background: #f8f9fa;
+          background: var(--color-background, #F3F8F6);
           min-height: 100vh;
         }
         .header {
@@ -136,27 +137,80 @@ class XPhotoFrameManager extends HTMLElement {
         }
         .header h1 {
           margin: 0;
-          color: #212529;
+          color: var(--color-text, #1A1A1A);
         }
-        .btn-primary {
-          background: #007bff;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 10px 20px;
+        /* Button styles (match host web UI pattern: .btn + variants) */
+        .btn {
+          --_btn-bg: var(--color-surface, #E2EDE9);
+          --_btn-fg: var(--color-text, #1A1A1A);
+          --_btn-border: var(--color-border, #D0DDD7);
+          --_btn-bg-hover: var(--color-surface-hover, #D6E7E1);
+          --_btn-border-hover: var(--color-border, #D0DDD7);
+          --_btn-bg-active: var(--_btn-bg-hover);
+          --_btn-border-active: var(--_btn-border-hover);
+
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: var(--spacing-sm, 0.5rem);
+          padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
+          border: 1px solid var(--_btn-border);
+          border-radius: var(--radius-sm, 6px);
+          background: var(--_btn-bg);
+          color: var(--_btn-fg);
+          font-family: inherit;
+          font-size: 0.875rem;
+          font-weight: 500;
           cursor: pointer;
-          font-size: 0.9rem;
+          transition: background .18s ease, border-color .18s ease, color .18s ease, transform .1s ease, opacity .18s ease;
+          user-select: none;
         }
-        .btn-primary:hover {
-          background: #0056b3;
+        .btn:hover:not(:disabled) {
+          background: var(--_btn-bg-hover);
+          border-color: var(--_btn-border-hover);
+          opacity: 0.95;
+        }
+        .btn:active:not(:disabled) {
+          transform: translateY(1px);
+          background: var(--_btn-bg-active);
+          border-color: var(--_btn-border-active);
+        }
+        .btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .btn-primary {
+          --_btn-bg: var(--color-success, #036600);
+          --_btn-fg: var(--color-text-on-dark, #FFFFFF);
+          --_btn-border: var(--color-primary, #036600);
+          --_btn-bg-hover: var(--color-primary-hover, var(--color-success, #036600));
+          --_btn-border-hover: var(--color-primary-hover, var(--color-primary, #036600));
         }
         .btn-secondary {
-          background: #6c757d;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 8px 16px;
-          cursor: pointer;
+          --_btn-bg: var(--color-surface, #E2EDE9);
+          --_btn-fg: var(--color-text, #1A1A1A);
+          --_btn-border: var(--color-border, #D0DDD7);
+          --_btn-bg-hover: var(--color-background-alt, #EAF2EE);
+          --_btn-border-hover: var(--color-border, #D0DDD7);
+        }
+        .btn-danger {
+          --_btn-bg: var(--color-error, #C62828);
+          --_btn-fg: var(--color-text-on-dark, #FFFFFF);
+          --_btn-border: var(--color-error, #C62828);
+          --_btn-bg-hover: color-mix(in srgb, var(--color-error, #C62828) 80%, white);
+          --_btn-border-hover: var(--color-error, #C62828);
+        }
+        .btn-sm {
+          padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
+          font-size: 0.75rem;
+        }
+        .btn-lg {
+          padding: var(--spacing-md, 1rem) var(--spacing-lg, 1.5rem);
+          font-size: 1rem;
+        }
+        .btn-block {
+          width: 100%;
         }
         .grid-container {
           display: grid;
@@ -164,12 +218,13 @@ class XPhotoFrameManager extends HTMLElement {
           gap: 24px;
         }
         .upload-area {
-          border: 2px dashed #dee2e6;
+          border: 2px dashed var(--color-primary, #036600);
           border-radius: 8px;
           padding: 40px;
           text-align: center;
           margin-bottom: 24px;
-          background: #ffffff;
+          background: var(--color-surface, #ffffff);
+          color: var(--color-text, #1A1A1A);
           cursor: pointer;
           transition: all 0.3s ease;
           overflow: hidden;
@@ -183,15 +238,15 @@ class XPhotoFrameManager extends HTMLElement {
         }
         .upload-area.collapsed::before {
           content: "📤 Upload Images (click to expand)";
-          color: #6c757d;
+          color: var(--upload-area-collapsed-text-color, var(--color-text-tertiary, #6c757d));
           font-size: 0.9rem;
         }
         .upload-area:hover {
-          border-color: #007bff;
+          border-color: var(--color-accent, #00C851);
         }
         .upload-area.dragover {
-          border-color: #007bff;
-          background: #f0f8ff;
+          border-color: var(--color-accent-hover, var(--color-accent, #00C851));
+          background: var(--color-background-alt, #EAF2EE);
         }
         .hidden {
           display: none;
@@ -203,15 +258,15 @@ class XPhotoFrameManager extends HTMLElement {
           min-height: 60vh;
         }
         .first-run-card {
-          background: white;
+          background: var(--color-surface, #ffffff);
           border-radius: 12px;
           padding: 48px;
           max-width: 600px;
           text-align: center;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          box-shadow: var(--elevation-2, 0 4px 12px rgba(0,0,0,0.1));
         }
         .first-run-card h2 {
-          color: #212529;
+          color: var(--color-text, #1A1A1A);
           margin-bottom: 16px;
         }
         .feature-list {
@@ -230,15 +285,18 @@ class XPhotoFrameManager extends HTMLElement {
         }
         .feature-item strong {
           display: block;
-          color: #212529;
+          color: var(--color-text, #1A1A1A);
           margin-bottom: 4px;
         }
         .feature-item p {
           margin: 0;
-          color: #6c757d;
+          color: var(--color-text-secondary, #3D4A44);
           font-size: 0.9rem;
         }
-        .btn-primary.large {
+        .muted {
+          color: var(--color-text-tertiary, #64706A);
+        }
+        .btn-lg {
           padding: 16px 32px;
           font-size: 1.1rem;
           margin-top: 16px;
@@ -260,7 +318,7 @@ class XPhotoFrameManager extends HTMLElement {
       return `
         <div class="header">
           <h1>🖼️ Photo Frame Galleries</h1>
-          <button class="btn-primary" id="new-gallery-btn">Create Your First Gallery</button>
+          <button class="btn btn-primary" id="new-gallery-btn">Create Your First Gallery</button>
         </div>
         <div class="first-run-container">
           <div class="first-run-card">
@@ -289,7 +347,7 @@ class XPhotoFrameManager extends HTMLElement {
                 </div>
               </div>
             </div>
-            <button class="btn-primary large" id="create-first-gallery-btn">Create Your First Gallery</button>
+            <button class="btn btn-primary btn-lg" id="create-first-gallery-btn">Create Your First Gallery</button>
           </div>
         </div>
       `;
@@ -298,14 +356,14 @@ class XPhotoFrameManager extends HTMLElement {
     return `
       <div class="header">
         <h1>🖼️ Photo Frame Galleries</h1>
-        <button class="btn-primary" id="new-gallery-btn">New Gallery</button>
+        <button class="btn btn-primary" id="new-gallery-btn">New Gallery</button>
       </div>
       <div class="grid-container" id="gallery-grid">
         <!-- Gallery cards will be inserted here -->
       </div>
       <template id="gallery-card-template">
         <div class="gallery-card-actions">
-          <button class="btn-secondary delete-gallery-btn" data-gallery-id="">🗑️ Delete</button>
+          <button class="btn btn-danger delete-gallery-btn" data-gallery-id="">🗑️ Delete</button>
         </div>
       </template>
     `;
@@ -320,11 +378,11 @@ class XPhotoFrameManager extends HTMLElement {
     return `
       <div class="header">
         <div>
-          <button class="btn-secondary" id="back-to-galleries">← Back to Galleries</button>
+          <button class="btn btn-secondary" id="back-to-galleries">← Back to Galleries</button>
           <h1 style="margin-top: 16px;">${gallery.name}</h1>
-          <p style="color: #6c757d;">${gallery.description || ''}</p>
+          <p class="muted">${gallery.description || ''}</p>
         </div>
-        <button class="btn-primary" id="gallery-settings-btn">Gallery Settings</button>
+        <button class="btn btn-primary" id="gallery-settings-btn">Gallery Settings</button>
       </div>
       
       <div class="upload-area ${this.state.uploadAreaCollapsed ? 'collapsed' : ''}" id="upload-area">
@@ -376,7 +434,7 @@ class XPhotoFrameManager extends HTMLElement {
       const actionsDiv = document.createElement('div');
       actionsDiv.className = 'gallery-card-actions';
       const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'btn-secondary delete-gallery-btn';
+      deleteBtn.className = 'btn btn-danger delete-gallery-btn';
       deleteBtn.textContent = '🗑️ Delete';
       deleteBtn.setAttribute('data-gallery-id', gallery.id);
       deleteBtn.addEventListener('click', (e) => this.handleDeleteGallery(e, gallery.id));
@@ -442,7 +500,7 @@ class XPhotoFrameManager extends HTMLElement {
       card.isCover = gallery.coverImageId === image.id.toString();
       // Add remove button
       const removeBtn = document.createElement('button');
-      removeBtn.className = 'btn-secondary remove-image-btn';
+      removeBtn.className = 'btn btn-secondary remove-image-btn';
       removeBtn.textContent = 'Remove from Gallery';
       removeBtn.style.marginTop = '8px';
       removeBtn.addEventListener('click', (e) => this.handleRemoveImageFromGallery(e, image.id, gallery.id));
@@ -762,12 +820,12 @@ class XPhotoFrameManager extends HTMLElement {
               <!-- Update interval removed: scheduling handled by external service -->
             </div>
             <div class="settings-section" style="margin-top:32px;">
-              <button class="btn-secondary" id="delete-gallery-btn" style="background:#dc3545;color:white;width:100%;margin-top:16px;">🗑️ Delete Gallery</button>
+              <button class="btn btn-danger btn-block" id="delete-gallery-btn" style="margin-top:16px;">🗑️ Delete Gallery</button>
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn-secondary" id="cancel-settings">Cancel</button>
-            <button class="btn-primary" id="save-settings">Save Settings</button>
+            <button class="btn btn-secondary" id="cancel-settings">Cancel</button>
+            <button class="btn btn-primary" id="save-settings">Save Settings</button>
           </div>
         </div>
       </div>
@@ -813,37 +871,37 @@ class XPhotoFrameManager extends HTMLElement {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
         display: flex;
         align-items: center;
         justify-content: center;
       }
       .modal-content {
-        background: white;
+        background: var(--color-surface, #ffffff);
         border-radius: 8px;
         width: 90%;
         max-width: 600px;
         max-height: 90vh;
         overflow-y: auto;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        box-shadow: var(--elevation-2, 0 4px 20px rgba(0, 0, 0, 0.2));
       }
       .modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding: 20px 24px;
-        border-bottom: 1px solid #dee2e6;
+        border-bottom: 1px solid var(--color-border, #D0DDD7);
       }
       .modal-header h2 {
         margin: 0;
-        color: #212529;
+        color: var(--color-text, #1A1A1A);
       }
       .close-btn {
         background: none;
         border: none;
         font-size: 24px;
         cursor: pointer;
-        color: #6c757d;
+        color: var(--color-text-tertiary, #64706A);
         width: 32px;
         height: 32px;
         display: flex;
@@ -851,7 +909,7 @@ class XPhotoFrameManager extends HTMLElement {
         justify-content: center;
       }
       .close-btn:hover {
-        color: #212529;
+        color: var(--color-text, #1A1A1A);
       }
       .modal-body {
         padding: 24px;
@@ -861,12 +919,12 @@ class XPhotoFrameManager extends HTMLElement {
       }
       .settings-section h3 {
         margin: 0 0 16px 0;
-        color: #495057;
+        color: var(--color-text-secondary, #3D4A44);
         font-size: 1.1rem;
       }
       .settings-note {
         margin: 0 0 16px 0;
-        color: #6c757d;
+        color: var(--color-text-tertiary, #64706A);
         font-size: 0.9rem;
         font-style: italic;
       }
@@ -884,14 +942,16 @@ class XPhotoFrameManager extends HTMLElement {
         display: block;
         margin-bottom: 4px;
         font-weight: 500;
-        color: #495057;
+        color: var(--color-text-secondary, #3D4A44);
       }
       .form-group input,
       .form-group select,
       .form-group textarea {
         width: 100%;
         padding: 8px 12px;
-        border: 1px solid #ced4da;
+        border: 1px solid var(--color-border, #D0DDD7);
+        background: var(--color-background-alt, #EAF2EE);
+        color: var(--color-text, #1A1A1A);
         border-radius: 4px;
         font-size: 14px;
         box-sizing: border-box;
@@ -902,7 +962,7 @@ class XPhotoFrameManager extends HTMLElement {
       }
       .modal-footer {
         padding: 16px 24px;
-        border-top: 1px solid #dee2e6;
+        border-top: 1px solid var(--color-border, #D0DDD7);
         display: flex;
         justify-content: flex-end;
         gap: 12px;

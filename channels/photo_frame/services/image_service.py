@@ -14,15 +14,7 @@ try:
 except ImportError:
     PILImage = None
 
-# Use absolute imports to avoid relative import issues
-try:
-    from models import Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult
-except ImportError:
-    # Fallback for when running from channel directory
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from models import Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult
+from ..models import Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult
 
 
 class ImageService:

@@ -99,6 +99,10 @@
   animation: pfFadeIn 0.3s ease-in-out;
 }
 
+.upload-content {
+  color: var(--photo-frame-dark);
+}
+
 @keyframes pfFadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }

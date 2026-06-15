@@ -1,14 +1,16 @@
 {
   "id": "com.epaperframe.photoframe",
-  "name": "Photo Frame Channel",
+  "name": "Photo Frame",
   "description": "Gallery-based photo slideshow with intelligent image management",
   "version": "1.0.0",
   "type": "embedded",
   "entry_point": "channel.py",
   "class_name": "PhotoFrameChannel",
   "icon": "photo",
-  "author": "Mimir Platform",
+  "author": "Ryan Lane",
   "tags": ["photo", "gallery", "slideshow", "display"],
+  "schemaVersion": "2.4",
+  "settingsType": "advanced",
   "config": {
     "supports_upload": true,
     "supports_gallery": true,
@@ -19,6 +21,109 @@
     "python": ">=3.8",
     "dependencies": ["fastapi", "pillow", "sqlalchemy"]
   },
+  "update_schedule": {
+    "unit": "minutes",
+    "duration": 15,
+    "settings_driven": true,
+    "settings_key": "slideshow_interval"
+  },
+  "placeholder_image": "placeholder.jpg",
+  "current_image": "current.jpg",
+  "permissions": ["read:images", "write:images"],
+  "settings": {
+    "defaults": {
+      "slideshow_enabled": true,
+      "order_mode": "added",
+      "crop_mode": "smart_crop",
+      "transition_effect": "fade",
+      "update_interval_unit": "minutes",
+      "update_interval_value": 30
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "slideshow_enabled": {
+          "type": "boolean",
+          "title": "Enable Slideshow",
+          "description": "Automatically rotate through images"
+        },
+        "order_mode": {
+          "type": "string",
+          "enum": ["added", "random", "custom"],
+          "title": "Image Order",
+          "description": "How to order images in slideshow"
+        },
+        "crop_mode": {
+          "type": "string",
+          "enum": ["smart_crop", "letterbox", "stretch"],
+          "title": "Display Mode",
+          "description": "How to fit images to display"
+        },
+        "transition_effect": {
+          "type": "string",
+          "enum": ["fade", "slide", "none"],
+          "title": "Transition Effect",
+          "description": "Visual transition between images",
+          "default": "fade"
+        },
+        "update_interval_unit": {
+          "type": "string",
+          "enum": ["days", "hours", "minutes", "seconds"],
+          "title": "Update Interval Unit",
+          "description": "Unit for update frequency",
+          "default": "minutes"
+        },
+        "update_interval_value": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Update Interval Value",
+          "description": "Numeric value for update frequency",
+          "default": 30
+        }
+      }
+    }
+  },
+  "ui": [
+    {
+      "element": "x-photo-frame-card",
+      "moduleUrl": "/api/channels/com.epaperframe.photoframe/ui/index.esm.js",
+      "styleUrl": "/api/channels/com.epaperframe.photoframe/ui/styles.css",
+      "slots": ["dashboard.gallery", "dashboard.sidebar"],
+      "propsSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "user": {"type": "object"},
+          "settings": {"type": "object"},
+          "stats": {"type": "object"}
+        }
+      },
+      "renderMode": "element",
+      "integrity": {
+        "module": "sha384-RjLq7ZwdGajSCyb7XwExD8MgFOWAQyOWG5YEJ3rAFaEPdRmUcm0dr3W07go5kiVy",
+        "style": "sha384-WDQcixiu+7CxVwxbEb5MdHQjhF7uWwiKCYVLUTgkCwMGmBwThlpklpNsVspPIims"
+      }
+    },
+    {
+      "route": "/photo-frame",
+      "element": "x-photo-frame-manager",
+      "moduleUrl": "/api/channels/com.epaperframe.photoframe/ui/manage.esm.js",
+      "nav": {
+        "label": "Photo Frame",
+        "icon": "image"
+      },
+      "renderMode": "element",
+      "integrity": {
+        "module": "sha384-7JQpQDWv2TXpfW1UfFuAxmAWvb8RRFhmBfBbMzf/MYO2EIvpRQ9AMWHDPmgR6pC4"
+      }
+    }
+  ],
+  "assets": [
+    {
+      "name": "logo",
+      "url": "/api/channels/com.epaperframe.photoframe/assets/logo.svg"
+    }
+  ],
   "endpoints": [
     {
       "path": "/manifest",
@@ -26,7 +131,7 @@
       "description": "Get channel manifest and capabilities"
     },
     {
-      "path": "/request_image", 
+      "path": "/request_image",
       "method": "POST",
       "description": "Request a random image from the gallery"
     },

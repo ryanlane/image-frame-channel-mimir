@@ -1,5 +1,12 @@
+"""
+Photo Frame Channel for Mimir Platform v2.4+ with Gallery Support
+
+This channel provides digital photo frame functionality with intelligent image
+management and galleries.
+Architecture: Modular FastAPI design with dependency injection and service layer separation.
+"""
+
 import os
-import sys
 import json
 import asyncio
 import re
@@ -7,42 +14,11 @@ import random
 import shutil
 import time
 import base64
-"""
-Photo Frame Channel for Mimir Platform v2.4+ with Gallery Support
-
-REFACTORING STATUS: ✅ COMPLETE
-✅ MODELS: Extracted to models/ directory
-  - models/gallery.py: Gallery data models and operations
-  - models/image.py: Image metadata and upload handling  
-  - models/settings.py: Settings validation and management
-
-✅ SERVICES: Extracted to services/ directory
-  - services/gallery_service.py: Gallery business logic
-  - services/image_service.py: Image processing and metadata
-  - services/rendering_service.py: Display rendering logic
-  - services/storage_service.py: File and data management
-
-✅ ROUTES: Extracted to routes/ directory  
-  - routes/images.py: Image upload, management, and reordering
-  - routes/galleries.py: Gallery (sub-channel) operations
-  - routes/settings.py: Configuration management
-  - routes/assets.py: Static file serving
-  - routes/admin.py: Administrative operations
-
-This channel provides digital photo frame functionality with intelligent image management and galleries.
-Architecture: Modular FastAPI design with dependency injection and service layer separation.
-"""
-
-from datetime import datetime, timezone
-from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime, timezone
 from typing import Tuple, Dict, Any, Optional, List
 from pathlib import Path
-import sys
-import importlib.util
-import traceback
 import logging
-import types
+
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -50,210 +26,34 @@ _PLUGIN_DIR = Path(__file__).parent
 
 logger = logging.getLogger("mimir.channels.photoframe")
 if not logger.handlers:
-    # Basic config only if root not already configured
     logging.basicConfig(level=logging.INFO)
 
-def _import_local(module_key: str, rel_path: str):
-    """Import a sibling module by explicit file path with pre-registration.
+# --- Models ---
+from .models import (
+    Gallery, GalleryCreate, GalleryUpdate,
+    Image, ImageMetadata, ImageUploadResult, ImageBatchUploadResult,
+    ChannelSettings, GallerySettings, SettingsManager,
+)
 
-    Provides deterministic, package-independent loading so dynamic discovery
-    (importlib.spec_from_file_location) doesn't break relative imports or
-    decorator introspection (e.g. @dataclass) which expects the module present
-    in sys.modules during class creation.
-    """
-    target = _PLUGIN_DIR / rel_path
-    if not target.exists():
-        raise ImportError(f"PhotoFrame: module file not found: {rel_path}")
-    unique_name = f"photoframe_{module_key}"
-    if unique_name in sys.modules:
-        return sys.modules[unique_name]
-    spec = importlib.util.spec_from_file_location(unique_name, target)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"PhotoFrame: cannot create spec for {rel_path}")
-    module = importlib.util.module_from_spec(spec)
-    # Pre-register so decorators can resolve module
-    sys.modules[unique_name] = module
-    try:
-        spec.loader.exec_module(module)  # type: ignore[attr-defined]
-    except Exception as e:  # noqa: BLE001
-        tb = traceback.format_exc()
-        # Cleanup failed registration to avoid poisoning
-        sys.modules.pop(unique_name, None)
-        raise ImportError(f"PhotoFrame: failed importing {rel_path}: {e}\n{tb}") from e
-    return module
+# --- Services ---
+from .services import GalleryService, ImageService, RenderingService, StorageService
 
-# ---------------------------------------------------------------------------
-# MODELS
+# --- Routes (factory functions) ---
+from .routes.images import create_images_router
+from .routes.galleries import create_galleries_router
+from .routes.settings import create_settings_router, create_subchannel_settings_router
+from .routes.assets import create_assets_router, create_legacy_assets_router
+from .routes.admin import create_admin_router
+
 try:
-    # Prefer aggregated __init__.py if present
-    models_mod = _import_local("models", "models/__init__.py") if (_PLUGIN_DIR / "models" / "__init__.py").exists() else None
+    from .routes.render import create_render_router
 except Exception as e:  # noqa: BLE001
-    logger.error("[PhotoFrame] Failed loading models package: %s", e)
-    models_mod = None
+    logger.error("[PhotoFrame] Failed loading render route module: %s", e)
+    create_render_router = lambda *a, **k: APIRouter()  # type: ignore  # noqa: E731
 
-if models_mod is None:
-    # Fallback: load individual model files (best-effort)
-    try:
-        gallery_model = _import_local("models_gallery", "models/gallery.py")
-        image_model = _import_local("models_image", "models/image.py")
-        settings_model = _import_local("models_settings", "models/settings.py")
-    except Exception as e:  # noqa: BLE001
-        logger.error("[PhotoFrame] Critical: unable to load required model modules: %s", e)
-        raise
-    # Aggregate symbols (guard with getattr to avoid crashing if later additions missing)
-    Gallery = getattr(gallery_model, "Gallery")  # type: ignore
-    GalleryCreate = getattr(gallery_model, "GalleryCreate")  # type: ignore
-    GalleryUpdate = getattr(gallery_model, "GalleryUpdate")  # type: ignore
-    Image = getattr(image_model, "Image")  # type: ignore
-    ImageMetadata = getattr(image_model, "ImageMetadata")  # type: ignore
-    ImageUploadResult = getattr(image_model, "ImageUploadResult")  # type: ignore
-    ImageBatchUploadResult = getattr(image_model, "ImageBatchUploadResult")  # type: ignore
-    ChannelSettings = getattr(settings_model, "ChannelSettings")  # type: ignore
-    GallerySettings = getattr(settings_model, "GallerySettings")  # type: ignore
-    SettingsManager = getattr(settings_model, "SettingsManager")  # type: ignore
-else:
-    try:
-        Gallery = getattr(models_mod, "Gallery")  # type: ignore
-        GalleryCreate = getattr(models_mod, "GalleryCreate")  # type: ignore
-        GalleryUpdate = getattr(models_mod, "GalleryUpdate")  # type: ignore
-        Image = getattr(models_mod, "Image")  # type: ignore
-        ImageMetadata = getattr(models_mod, "ImageMetadata")  # type: ignore
-        ImageUploadResult = getattr(models_mod, "ImageUploadResult")  # type: ignore
-        ImageBatchUploadResult = getattr(models_mod, "ImageBatchUploadResult")  # type: ignore
-        ChannelSettings = getattr(models_mod, "ChannelSettings")  # type: ignore
-        GallerySettings = getattr(models_mod, "GallerySettings")  # type: ignore
-        SettingsManager = getattr(models_mod, "SettingsManager")  # type: ignore
-    except Exception as e:  # noqa: BLE001
-        logger.error("[PhotoFrame] Failed binding model attributes: %s", e)
-        raise
-
-# ---------------------------------------------------------------------------
-# SERVICES (with isolated 'models' alias injection to prevent cross-channel collisions)
-_prev_models_alias = sys.modules.get("models")
-try:  # Temporarily map 'models' to this channel's model definitions so service files using 'from models import ...' resolve locally
-    if models_mod is not None:
-        sys.modules["models"] = models_mod
-    else:
-        temp_models = types.ModuleType("models")
-        for _name, _val in [
-            ("Gallery", Gallery),
-            ("GalleryCreate", GalleryCreate),
-            ("GalleryUpdate", GalleryUpdate),
-            ("Image", Image),
-            ("ImageMetadata", ImageMetadata),
-            ("ImageUploadResult", ImageUploadResult),
-            ("ImageBatchUploadResult", ImageBatchUploadResult),
-            ("ChannelSettings", ChannelSettings),
-            ("GallerySettings", GallerySettings),
-            ("SettingsManager", SettingsManager),
-        ]:
-            setattr(temp_models, _name, _val)
-        sys.modules["models"] = temp_models
-
-    gallery_service_mod = _import_local("service_gallery", "services/gallery_service.py")
-    image_service_mod = _import_local("service_image", "services/image_service.py")
-    rendering_service_mod = _import_local("service_rendering", "services/rendering_service.py")
-    storage_service_mod = _import_local("service_storage", "services/storage_service.py")
-    GalleryService = getattr(gallery_service_mod, "GalleryService")  # type: ignore
-    ImageService = getattr(image_service_mod, "ImageService")  # type: ignore
-    RenderingService = getattr(rendering_service_mod, "RenderingService")  # type: ignore
-    StorageService = getattr(storage_service_mod, "StorageService")  # type: ignore
-except Exception as e:  # noqa: BLE001
-    logger.error("[PhotoFrame] Failed loading service modules: %s", e)
-    raise
-finally:
-    # Restore prior 'models' module to avoid affecting other plugins (e.g., spotify_status)
-    if _prev_models_alias is not None:
-        sys.modules["models"] = _prev_models_alias
-    else:
-        sys.modules.pop("models", None)
-
-# ---------------------------------------------------------------------------
-# ROUTES (individual modules exposing factory functions)
-# Some legacy route modules still do 'from services import X' / 'from models import Y'.
-# We create temporary per-channel aliases to prevent resolving another plugin's
-# similarly named global modules.
-_prev_services_alias_routes = sys.modules.get("services")
-_prev_models_alias_routes = sys.modules.get("models")
-try:
-    # Inject models alias (again) for route module import phase
-    if models_mod is not None:
-        sys.modules["models"] = models_mod
-    else:
-        temp_models_routes = types.ModuleType("models")
-        for _name, _val in [
-            ("Gallery", Gallery),
-            ("GalleryCreate", GalleryCreate),
-            ("GalleryUpdate", GalleryUpdate),
-            ("Image", Image),
-            ("ImageMetadata", ImageMetadata),
-            ("ImageUploadResult", ImageUploadResult),
-            ("ImageBatchUploadResult", ImageBatchUploadResult),
-            ("ChannelSettings", ChannelSettings),
-            ("GallerySettings", GallerySettings),
-            ("SettingsManager", SettingsManager),
-        ]:
-            setattr(temp_models_routes, _name, _val)
-        sys.modules["models"] = temp_models_routes
-
-    # Inject services alias with service class references
-    temp_services_routes = types.ModuleType("services")
-    for _name, _val in [
-        ("GalleryService", GalleryService),
-        ("ImageService", ImageService),
-        ("RenderingService", RenderingService),
-        ("StorageService", StorageService),
-    ]:
-        setattr(temp_services_routes, _name, _val)
-    sys.modules["services"] = temp_services_routes
-
-    images_routes_mod = _import_local("routes_images", "routes/images.py")
-    galleries_routes_mod = _import_local("routes_galleries", "routes/galleries.py")
-    settings_routes_mod = _import_local("routes_settings", "routes/settings.py")
-    assets_routes_mod = _import_local("routes_assets", "routes/assets.py")
-    admin_routes_mod = _import_local("routes_admin", "routes/admin.py")
-    # Newly added render (request_image) route module
-    try:
-        render_routes_mod = _import_local("routes_render", "routes/render.py")
-    except Exception as e:  # noqa: BLE001
-        logger.error("[PhotoFrame] Failed loading render route module: %s", e)
-        render_routes_mod = None
-    # Optional legacy or subchannel settings modules
-    legacy_assets_factory = getattr(assets_routes_mod, "create_legacy_assets_router", None)
-    create_images_router = getattr(images_routes_mod, "create_images_router")  # type: ignore
-    create_galleries_router = getattr(galleries_routes_mod, "create_galleries_router")  # type: ignore
-    create_settings_router = getattr(settings_routes_mod, "create_settings_router")  # type: ignore
-    create_assets_router = getattr(assets_routes_mod, "create_assets_router")  # type: ignore
-    create_legacy_assets_router = legacy_assets_factory if legacy_assets_factory else (lambda *a, **k: APIRouter())
-    create_admin_router = getattr(admin_routes_mod, "create_admin_router")  # type: ignore
-    # Subchannel settings (may be in settings or separate file)
-    create_subchannel_settings_router = getattr(settings_routes_mod, "create_subchannel_settings_router", lambda *a, **k: APIRouter())  # type: ignore
-    # Render router factory (may be None if import failed)
-    create_render_router = getattr(render_routes_mod, "create_render_router", lambda *a, **k: APIRouter()) if render_routes_mod else (lambda *a, **k: APIRouter())
-except Exception as e:  # noqa: BLE001
-    logger.error("[PhotoFrame] Failed loading route modules: %s", e)
-    raise
-finally:
-    # Restore prior modules to avoid polluting global import space
-    if _prev_services_alias_routes is not None:
-        sys.modules["services"] = _prev_services_alias_routes
-    else:
-        sys.modules.pop("services", None)
-    if _prev_models_alias_routes is not None:
-        sys.modules["models"] = _prev_models_alias_routes
-    else:
-        sys.modules.pop("models", None)
-
-# ---------------------------------------------------------------------------
-# UTILS
-try:
-    image_processor_mod = _import_local("utils_image_processor", "utils/image_processor.py")
-    file_metadata_mod = _import_local("utils_file_metadata", "utils/file_metadata.py")
-    ImageProcessor = getattr(image_processor_mod, "ImageProcessor")  # type: ignore
-    FileMetadataManager = getattr(file_metadata_mod, "FileMetadataManager")  # type: ignore
-except Exception as e:  # noqa: BLE001
-    logger.error("[PhotoFrame] Failed loading utility modules: %s", e)
-    raise
+# --- Utils ---
+from .utils.image_processor import ImageProcessor
+from .utils.file_metadata import FileMetadataManager
 class BaseChannel:
     """
     Abstract base class for Mimir Platform channels with sub-channel support
@@ -334,7 +134,9 @@ class PhotoFrameChannel(BaseChannel):
                         Should be: /var/opt/mimir/mimir-api/channels/photo_frame/
         """
         self.channel_dir = Path(channel_dir)
-        self.config_path = self.channel_dir / "config.json"
+        # Prefer plugin.json (consolidated), fall back to config.json for backwards compat
+        _plugin_json = self.channel_dir / "plugin.json"
+        self.config_path = _plugin_json if _plugin_json.exists() else self.channel_dir / "config.json"
         self._config = self._load_config()
         
         # Validate critical paths for API integration
@@ -389,7 +191,7 @@ class PhotoFrameChannel(BaseChannel):
         """Validate that the channel is properly set up for API integration"""
         # Check config exists and has correct ID
         if not self.config_path.exists():
-            raise RuntimeError(f"config.json not found at {self.config_path}")
+            raise RuntimeError(f"plugin.json/config.json not found at {self.config_path}")
         
         config = self._load_config()
         expected_id = "com.epaperframe.photoframe"
@@ -1511,43 +1313,6 @@ class PhotoFrameChannel(BaseChannel):
 
             crop_mode = self._canonicalize_crop_mode(settings_norm.get("crop_mode"))
             gallery_key = gallery_id or "default"
-            cache_key = self._render_cache_key(gallery_key, width, height, orientation, crop_mode)
-
-            # Cache reuse (distribution_mode == current)
-            if distribution_mode == "current":
-                cache_entry = self._render_cache.get(cache_key)
-                if cache_entry and (time.time() - cache_entry["ts"]) < self._cache_ttl_seconds:
-                    cached_path = cache_entry["path"]
-                    if os.path.exists(cached_path):
-                        if cache_entry.get("image_id"):
-                            self._last_selected_by_gallery[gallery_key] = cache_entry.get("image_id")
-                        with open(cached_path, "rb") as f:
-                            content_bytes = f.read()
-                        # Sniff content type (currently renders JPEG, but future-proof)
-                        content_type = "image/jpeg"
-                        if content_bytes.startswith(b"\x89PNG"):
-                            content_type = "image/png"
-                        elif content_bytes[0:2] == b"\xff\xd8":
-                            content_type = "image/jpeg"
-                        response: Dict[str, Any] = {
-                            "success": True,
-                            "bytes": content_bytes,
-                            "content_type": content_type,
-                            "filename": Path(cached_path).name,
-                            "image_id": cache_entry.get("image_id"),
-                            "gallery_id": gallery_id,
-                            "width": width,
-                            "height": height,
-                            "orientation": orientation,
-                            "crop_mode": crop_mode,
-                            "distribution_mode": distribution_mode,
-                            "cached": True,
-                            "message": "Reused cached render",
-                            "preferred_transport": "bytes",
-                        }
-                        if include_base64 and not suppress_legacy_base64:
-                            response["image"] = base64.b64encode(content_bytes).decode("utf-8")
-                        return response
 
             # Candidate image gathering
             if gallery_id:
@@ -1613,6 +1378,43 @@ class PhotoFrameChannel(BaseChannel):
             if not selected_image:
                 return {"success": False, "error": "Unable to select image"}
             print(f"[PhotoFrameChannel] selected image_id={selected_image.get('id')} gallery={gallery_key} mode={order_mode} dist={distribution_mode}")
+
+            cache_key = self._render_cache_key(gallery_key, width, height, orientation, crop_mode, selected_image)
+
+            # Cache reuse (distribution_mode == current) after we know the selected image and crop metadata.
+            if distribution_mode == "current":
+                cache_entry = self._render_cache.get(cache_key)
+                if cache_entry and (time.time() - cache_entry["ts"]) < self._cache_ttl_seconds:
+                    cached_path = cache_entry["path"]
+                    if os.path.exists(cached_path):
+                        if cache_entry.get("image_id"):
+                            self._last_selected_by_gallery[gallery_key] = cache_entry.get("image_id")
+                        with open(cached_path, "rb") as f:
+                            content_bytes = f.read()
+                        content_type = "image/jpeg"
+                        if content_bytes.startswith(b"\x89PNG"):
+                            content_type = "image/png"
+                        elif content_bytes[0:2] == b"\xff\xd8":
+                            content_type = "image/jpeg"
+                        response: Dict[str, Any] = {
+                            "success": True,
+                            "bytes": content_bytes,
+                            "content_type": content_type,
+                            "filename": Path(cached_path).name,
+                            "image_id": cache_entry.get("image_id"),
+                            "gallery_id": gallery_id,
+                            "width": width,
+                            "height": height,
+                            "orientation": orientation,
+                            "crop_mode": crop_mode,
+                            "distribution_mode": distribution_mode,
+                            "cached": True,
+                            "message": "Reused cached render",
+                            "preferred_transport": "bytes",
+                        }
+                        if include_base64 and not suppress_legacy_base64:
+                            response["image"] = base64.b64encode(content_bytes).decode("utf-8")
+                        return response
 
             merged_settings = dict(settings_norm)
             merged_settings["crop_mode"] = crop_mode
@@ -1734,8 +1536,26 @@ class PhotoFrameChannel(BaseChannel):
             return "smart_crop"
         return v
 
-    def _render_cache_key(self, gallery_key: str, width: int, height: int, orientation: str, crop_mode: str) -> str:
-        return f"{gallery_key}:{width}x{height}:{orientation}:{crop_mode}"
+    def _render_cache_key(
+        self,
+        gallery_key: str,
+        width: int,
+        height: int,
+        orientation: str,
+        crop_mode: str,
+        image_record: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        image_id = image_record.get("id") if image_record else self._last_selected_by_gallery.get(gallery_key)
+        crop_signature = "default"
+        if image_record:
+            crop_signature = ":".join([
+                str(image_record.get("crop_x", 0)),
+                str(image_record.get("crop_y", 0)),
+                str(image_record.get("crop_width", 100)),
+                str(image_record.get("crop_height", 100)),
+                str(image_record.get("preserve_aspect_ratio", False)),
+            ])
+        return f"{gallery_key}:{image_id}:{width}x{height}:{orientation}:{crop_mode}:{crop_signature}"
 
     def _select_image_by_distribution(self, images: List[Dict[str, Any]], distribution_mode: str, gallery_key: str) -> Optional[Dict[str, Any]]:
         if not images:

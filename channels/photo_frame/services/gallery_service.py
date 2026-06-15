@@ -8,14 +8,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-# Use absolute imports to avoid relative import issues
-try:
-    from models import Gallery, GalleryCreate, GalleryUpdate, GallerySettings
-except ImportError:
-    # Fallback for when running from channel directory
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from models import Gallery, GalleryCreate, GalleryUpdate, GallerySettings
+from ..models import Gallery, GalleryCreate, GalleryUpdate, GallerySettings
 
 
 class GalleryService:

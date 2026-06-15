@@ -22,14 +22,7 @@ from typing import Any, Dict, Optional, Tuple, Callable, Awaitable
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import Response, JSONResponse
 
-# Service imports (dependency injection expected in channel bootstrap)
-try:
-    from services import RenderingService, GalleryService, ImageService
-except ImportError:  # Fallback when running directly from routes folder
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from services import RenderingService, GalleryService, ImageService
+from ..services import RenderingService, GalleryService, ImageService
 
 
 class RenderRoutes:
