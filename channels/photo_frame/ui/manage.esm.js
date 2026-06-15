@@ -301,6 +301,51 @@ class XPhotoFrameManager extends HTMLElement {
           font-size: 1.1rem;
           margin-top: 16px;
         }
+        #upload-progress {
+          margin: 0 0 16px 0;
+          padding: 12px 16px;
+          background: var(--color-surface, #fff);
+          border: 1px solid var(--color-border, #D0DDD7);
+          border-radius: 6px;
+        }
+        .progress-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+        .progress-label {
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: var(--color-text-secondary, #3D4A44);
+        }
+        .progress-count {
+          font-size: 0.8rem;
+          color: var(--color-text-tertiary, #64706A);
+        }
+        .progress-track {
+          height: 6px;
+          background: var(--color-background-alt, #EAF2EE);
+          border-radius: 3px;
+          overflow: hidden;
+        }
+        .progress-fill {
+          height: 100%;
+          background: var(--color-accent, #00C851);
+          border-radius: 3px;
+          transition: width 0.25s ease;
+        }
+        .upload-area.uploading {
+          pointer-events: none;
+          opacity: 0.7;
+        }
+        @keyframes card-appear {
+          from { opacity: 0; transform: scale(0.92); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        .image-card-entering {
+          animation: card-appear 0.2s ease forwards;
+        }
       </style>
       <div class="manager-container">
         ${viewContainer.innerHTML}
@@ -592,67 +637,132 @@ class XPhotoFrameManager extends HTMLElement {
   }
 
   async handleFiles(files) {
-    const formData = new FormData();
-    for (let file of files) {
-      if (file.type.startsWith('image/')) {
-        formData.append('files', file);
-      }
-    }
+    if (this._uploading) return;
 
-    console.log('Uploading files:', files.length, 'valid images:', [...formData.entries()].length);
+    const imageFiles = [...files].filter(f => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
 
-    try {
-      const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/upload`, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      });
+    this._uploading = true;
+    const total = imageFiles.length;
+    let completed = 0;
+    const uploadedIds = [];
 
-      console.log('Upload response status:', res.status);
-      
-      if (res.ok) {
-        const uploadResult = await res.json();
-        console.log('Upload result:', uploadResult);
-        
-        if (uploadResult.results && Array.isArray(uploadResult.results)) {
-          const successfulUploads = uploadResult.results.filter(r => r.success);
-          const failedUploads = uploadResult.results.filter(r => !r.success);
-          console.log('Successful uploads:', successfulUploads.length);
-          console.log('Failed uploads:', failedUploads.length);
-          
-          // Debug: show error details for failed uploads
-          if (failedUploads.length > 0) {
-            console.log('Failed upload details:');
-            failedUploads.forEach((upload, index) => {
-              console.log(`  ${index + 1}. File: ${upload.filename}, Error: ${upload.error}`);
-            });
-          }
-          
-          if (this.state.currentGalleryId && successfulUploads.length > 0) {
-            const imageIds = successfulUploads.map(img => img.image_id.toString());
-            console.log('Assigning images to gallery:', this.state.currentGalleryId, imageIds);
-            try {
-              await this.assignImagesToGallery(imageIds);
-              console.log('Successfully assigned images to gallery');
-            } catch (assignError) {
-              console.error('Failed to assign images to gallery:', assignError);
-              alert(`Images uploaded but failed to assign to gallery: ${assignError.message}`);
+    // Expand upload area and show progress bar
+    this.state.uploadAreaCollapsed = false;
+    this._showUploadProgress(total);
+    const uploadArea = this.shadowRoot.getElementById('upload-area');
+    uploadArea?.classList.add('uploading');
+
+    const gallery = this.state.galleries.find(g => g.id === this.state.currentGalleryId);
+
+    // Upload all files in parallel; handle each result as it arrives
+    await Promise.all(imageFiles.map(async (file) => {
+      const formData = new FormData();
+      formData.append('files', file);
+      try {
+        const res = await fetch(`${this.apiBaseUrl}/api/channels/com.epaperframe.photoframe/images/upload`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const result = await res.json();
+          for (const img of (result.results || []).filter(r => r.success)) {
+            const imageObj = { id: img.image_id, filename: img.filename };
+            this.state.allImages.push(imageObj);
+            if (gallery) {
+              gallery.contentIds = [...(gallery.contentIds || []), img.image_id.toString()];
             }
-          } else if (!this.state.currentGalleryId) {
-            console.log('No current gallery selected, images uploaded but not assigned to any gallery');
+            uploadedIds.push(img.image_id.toString());
+            this._appendImageCardToGrid(imageObj, gallery);
           }
+        } else {
+          console.error('Upload failed for', file.name, res.status);
         }
-        
-        await this.refreshData();
-      } else {
-        const errorText = await res.text();
-        console.error('Upload failed with status:', res.status, 'Response:', errorText);
-        alert(`Upload failed: ${res.status} ${res.statusText}\n${errorText}`);
+      } catch (err) {
+        console.error('Upload error for', file.name, err);
       }
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert(`Upload error: ${error.message}`);
+      completed++;
+      this._updateUploadProgress(completed, total);
+    }));
+
+    // Single gallery assignment call for all successfully uploaded images
+    if (this.state.currentGalleryId && uploadedIds.length > 0) {
+      try {
+        await this.assignImagesToGallery(uploadedIds);
+      } catch (err) {
+        console.error('Failed to assign images to gallery:', err);
+      }
     }
+
+    this._hideUploadProgress();
+    uploadArea?.classList.remove('uploading');
+    this._uploading = false;
+
+    // Final sync to get server-authoritative data
+    await this.refreshData();
+  }
+
+  _showUploadProgress(total) {
+    const existing = this.shadowRoot.getElementById('upload-progress');
+    if (existing) existing.remove();
+
+    const bar = document.createElement('div');
+    bar.id = 'upload-progress';
+    bar.innerHTML = `
+      <div class="progress-header">
+        <span class="progress-label">Uploading images…</span>
+        <span class="progress-count">0 of ${total}</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>
+    `;
+
+    const grid = this.shadowRoot.getElementById('image-grid');
+    const uploadArea = this.shadowRoot.getElementById('upload-area');
+    if (grid) {
+      grid.insertAdjacentElement('beforebegin', bar);
+    } else if (uploadArea) {
+      uploadArea.insertAdjacentElement('afterend', bar);
+    }
+  }
+
+  _updateUploadProgress(completed, total) {
+    const bar = this.shadowRoot.getElementById('upload-progress');
+    if (!bar) return;
+    const pct = Math.round((completed / total) * 100);
+    bar.querySelector('.progress-count').textContent = `${completed} of ${total}`;
+    bar.querySelector('.progress-label').textContent =
+      completed < total ? 'Uploading images…' : `${completed} of ${total} uploaded`;
+    bar.querySelector('.progress-fill').style.width = `${pct}%`;
+  }
+
+  _hideUploadProgress() {
+    const bar = this.shadowRoot.getElementById('upload-progress');
+    if (bar) {
+      bar.querySelector('.progress-label').textContent = 'Upload complete';
+      bar.querySelector('.progress-fill').style.width = '100%';
+      // refreshData() re-renders shortly after, which removes this element
+    }
+  }
+
+  _appendImageCardToGrid(image, gallery) {
+    const grid = this.shadowRoot.getElementById('image-grid');
+    if (!grid) return;
+
+    const card = document.createElement('image-card');
+    card.className = 'image-card-entering';
+    card.image = image;
+    card.isCover = gallery?.coverImageId === image.id.toString();
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-secondary remove-image-btn';
+    removeBtn.textContent = 'Remove from Gallery';
+    removeBtn.style.marginTop = '8px';
+    removeBtn.addEventListener('click', (e) =>
+      this.handleRemoveImageFromGallery(e, image.id, gallery?.id)
+    );
+    card.appendChild(removeBtn);
+    grid.appendChild(card);
   }
 
   async assignImagesToGallery(imageIds) {
