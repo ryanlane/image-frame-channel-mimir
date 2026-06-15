@@ -2,7 +2,7 @@
   "id": "com.epaperframe.photoframe",
   "name": "Photo Frame",
   "description": "Gallery-based photo slideshow with intelligent image management",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "embedded",
   "entry_point": "channel.py",
   "class_name": "PhotoFrameChannel",
@@ -21,6 +21,7 @@
     "python": ">=3.8",
     "dependencies": ["fastapi", "pillow", "sqlalchemy"]
   },
+  "user_data_dirs": ["data", "assets/uploads"],
   "update_schedule": {
     "unit": "minutes",
     "duration": 15,

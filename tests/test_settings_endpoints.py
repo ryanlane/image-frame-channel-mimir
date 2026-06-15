@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 # Add channels directory to path for testing
-channels_dir = Path(__file__).parent / "channels" / "photo_frame"
+channels_dir = Path(__file__).resolve().parent.parent / "channels" / "photo_frame"
 sys.path.insert(0, str(channels_dir))
 
 from channel import PhotoFrameChannel

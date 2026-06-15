@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add the channel directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'channels', 'photo_frame'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'channels', 'photo_frame'))
 
 def test_gallery_metadata_update():
     """Test updating gallery name and description"""

@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 # Add the channel directory to Python path
-channel_dir = Path(__file__).parent / "channels" / "photo_frame"
+channel_dir = Path(__file__).resolve().parent.parent / "channels" / "photo_frame"
 sys.path.insert(0, str(channel_dir))
 
 from channel import PhotoFrameChannel

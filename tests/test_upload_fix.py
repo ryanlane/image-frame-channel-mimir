@@ -7,7 +7,7 @@ import sys
 import os
 
 # Add the channel directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'channels', 'photo_frame'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'channels', 'photo_frame'))
 
 def test_upload_fix():
     """Test that the upload route can be imported without errors"""
@@ -18,7 +18,7 @@ def test_upload_fix():
     try:
         # Try to compile the file to check for syntax errors
         import py_compile
-        routes_file = os.path.join(os.path.dirname(__file__), 'channels', 'photo_frame', 'routes', 'images.py')
+        routes_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'channels', 'photo_frame', 'routes', 'images.py')
         py_compile.compile(routes_file, doraise=True)
         print("✅ images.py compiles without syntax errors")
         

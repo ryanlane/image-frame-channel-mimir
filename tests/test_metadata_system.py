@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 # Add the channel directory to path
-sys.path.insert(0, str(Path(__file__).parent / "channels" / "photo_frame"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "channels" / "photo_frame"))
 
 def test_metadata_system():
     """Test the file-based metadata system"""

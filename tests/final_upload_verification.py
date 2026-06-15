@@ -7,7 +7,7 @@ import sys
 import os
 
 # Add the channel directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'channels', 'photo_frame'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'channels', 'photo_frame'))
 
 def final_upload_verification():
     """Final check that all upload issues are resolved"""
@@ -18,7 +18,7 @@ def final_upload_verification():
     try:
         # Check the route file syntax
         import py_compile
-        routes_file = os.path.join(os.path.dirname(__file__), 'channels', 'photo_frame', 'routes', 'images.py')
+        routes_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'channels', 'photo_frame', 'routes', 'images.py')
         py_compile.compile(routes_file, doraise=True)
         print("✅ Routes file compiles without errors")
         
@@ -51,7 +51,7 @@ def final_upload_verification():
             fixes_applied.append("❌ Still using wrong 'error_message' attribute")
         
         # Check URL fix in frontend
-        frontend_file = os.path.join(os.path.dirname(__file__), 'channels', 'photo_frame', 'ui', 'manage.esm.js')
+        frontend_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'channels', 'photo_frame', 'ui', 'manage.esm.js')
         with open(frontend_file, 'r') as f:
             frontend_content = f.read()
         
