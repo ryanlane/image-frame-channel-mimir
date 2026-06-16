@@ -647,7 +647,6 @@ class XPhotoFrameManager extends HTMLElement {
     let completed = 0;
     const uploadedIds = [];
 
-    // Expand upload area and show progress bar
     this.state.uploadAreaCollapsed = false;
     this._showUploadProgress(total);
     const uploadArea = this.shadowRoot.getElementById('upload-area');
@@ -655,8 +654,17 @@ class XPhotoFrameManager extends HTMLElement {
 
     const gallery = this.state.galleries.find(g => g.id === this.state.currentGalleryId);
 
-    // Upload all files in parallel; handle each result as it arrives
+    // Create preview cards for every file immediately — before any upload starts
+    const pendingCards = new Map(); // File → { card, previewUrl }
+    for (const file of imageFiles) {
+      const previewUrl = URL.createObjectURL(file);
+      const card = this._appendPreviewCard(file.name, gallery, previewUrl);
+      pendingCards.set(file, { card, previewUrl });
+    }
+
+    // Upload all files in parallel; update each card in place as it resolves
     await Promise.all(imageFiles.map(async (file) => {
+      const { card, previewUrl } = pendingCards.get(file);
       const formData = new FormData();
       formData.append('files', file);
       try {
@@ -674,19 +682,23 @@ class XPhotoFrameManager extends HTMLElement {
               gallery.contentIds = [...(gallery.contentIds || []), img.image_id.toString()];
             }
             uploadedIds.push(img.image_id.toString());
-            this._appendImageCardToGrid(imageObj, gallery);
+            // Update the existing card in place: swap in real data, remove spinner
+            // Keep previewSrc until refreshData re-renders with the server thumbnail
+            card.uploading = false;
+            card.image = imageObj;
           }
         } else {
           console.error('Upload failed for', file.name, res.status);
+          card.remove();
         }
       } catch (err) {
         console.error('Upload error for', file.name, err);
+        card.remove();
       }
       completed++;
       this._updateUploadProgress(completed, total);
     }));
 
-    // Single gallery assignment call for all successfully uploaded images
     if (this.state.currentGalleryId && uploadedIds.length > 0) {
       try {
         await this.assignImagesToGallery(uploadedIds);
@@ -695,11 +707,15 @@ class XPhotoFrameManager extends HTMLElement {
       }
     }
 
+    // Revoke preview object URLs before the full re-render
+    for (const { previewUrl } of pendingCards.values()) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
     this._hideUploadProgress();
     uploadArea?.classList.remove('uploading');
     this._uploading = false;
 
-    // Final sync to get server-authoritative data
     await this.refreshData();
   }
 
@@ -745,24 +761,28 @@ class XPhotoFrameManager extends HTMLElement {
     }
   }
 
-  _appendImageCardToGrid(image, gallery) {
+  _appendPreviewCard(filename, gallery, previewUrl) {
     const grid = this.shadowRoot.getElementById('image-grid');
-    if (!grid) return;
+    if (!grid) return null;
 
     const card = document.createElement('image-card');
     card.className = 'image-card-entering';
-    card.image = image;
-    card.isCover = gallery?.coverImageId === image.id.toString();
+    // Set previewSrc and uploading before image so the first render uses them
+    card.previewSrc = previewUrl;
+    card.uploading = true;
+    card.image = { id: `pending-${Date.now()}`, filename };
+    card.isCover = false;
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-secondary remove-image-btn';
     removeBtn.textContent = 'Remove from Gallery';
     removeBtn.style.marginTop = '8px';
     removeBtn.addEventListener('click', (e) =>
-      this.handleRemoveImageFromGallery(e, image.id, gallery?.id)
+      this.handleRemoveImageFromGallery(e, card.image?.id, gallery?.id)
     );
     card.appendChild(removeBtn);
     grid.appendChild(card);
+    return card;
   }
 
   async assignImagesToGallery(imageIds) {

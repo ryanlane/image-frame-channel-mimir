@@ -2,7 +2,7 @@
   "id": "com.epaperframe.photoframe",
   "name": "Photo Frame",
   "description": "Gallery-based photo slideshow with intelligent image management",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "embedded",
   "entry_point": "channel.py",
   "class_name": "PhotoFrameChannel",

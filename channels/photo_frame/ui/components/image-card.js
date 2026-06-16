@@ -93,9 +93,7 @@ class ImageCard extends HTMLElement {
 
   set image(image) {
     this._image = image;
-    if (this.isConnected) {
-      this.render();
-    }
+    if (this.isConnected) this.render();
   }
 
   get image() {
@@ -104,23 +102,43 @@ class ImageCard extends HTMLElement {
 
   set isCover(isCover) {
     this._isCover = isCover;
-    if (this.isConnected) {
-      this.render();
-    }
+    if (this.isConnected) this.render();
   }
 
   get isCover() {
     return this._isCover;
   }
 
+  set previewSrc(src) {
+    this._previewSrc = src;
+    if (this.isConnected) this.render();
+  }
+
+  get previewSrc() {
+    return this._previewSrc;
+  }
+
+  set uploading(val) {
+    this._uploading = val;
+    if (this.isConnected) this.render();
+  }
+
+  get uploading() {
+    return this._uploading;
+  }
+
   render() {
     if (!this.image) return;
     const apiBaseUrl = window.mimirServerBaseUrl || window.location.origin;
-    
+
     // Use new thumbnail format: basename.thumb.jpg
     const baseName = this.image.filename.split('.')[0];
     const thumbnailUrl = `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${baseName}.thumb.jpg`;
     const originalUrl = `${apiBaseUrl}/api/channels/com.epaperframe.photoframe/assets/uploads/${this.image.filename}`;
+
+    // During upload, show local object URL preview; after upload, use server thumbnail
+    const primarySrc = this._previewSrc || thumbnailUrl;
+    const showFallback = !this._previewSrc; // only chain to original/placeholder when using server URL
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -154,7 +172,6 @@ class ImageCard extends HTMLElement {
         }
         .image-thumbnail {
           width: 100%;
-          /* Maintain a square box regardless of card width */
           aspect-ratio: 1 / 1;
           background-color: #e9ecef;
           position: relative;
@@ -163,7 +180,6 @@ class ImageCard extends HTMLElement {
         .image-thumbnail img {
           width: 100%;
           height: 100%;
-          /* Fit entire image inside the square while preserving aspect ratio */
           object-fit: contain;
           object-position: center center;
           background-color: #e9ecef;
@@ -184,6 +200,25 @@ class ImageCard extends HTMLElement {
           justify-content: center;
           color: #6c757d;
           font-size: 2rem;
+        }
+        .upload-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .upload-spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid rgba(255, 255, 255, 0.3);
+          border-top-color: #fff;
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
         .image-info {
           padding: 8px;
@@ -252,13 +287,16 @@ class ImageCard extends HTMLElement {
           opacity: 1;
         }
       </style>
-      <div class="image-card" draggable="true">
+      <div class="image-card" draggable="${this._uploading ? 'false' : 'true'}">
         <div class="image-thumbnail">
-          <img class="thumbnail-primary" src="${thumbnailUrl}" alt="${this.image.filename}" 
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <img class="thumbnail-primary" src="${primarySrc}" alt="${this.image.filename}"
+               onerror="${showFallback ? "this.style.display='none'; this.nextElementSibling.style.display='block';" : ''}" />
+          ${showFallback ? `
           <img class="thumbnail-fallback" src="${originalUrl}" alt="${this.image.filename}"
                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
           <div class="thumbnail-placeholder">🖼️</div>
+          ` : ''}
+          ${this._uploading ? `<div class="upload-overlay"><div class="upload-spinner"></div></div>` : ''}
         </div>
         <div class="image-info">
           <div class="image-filename">${this.escapeHtml(this.image.filename)}</div>

@@ -1,1 +1,1 @@
-"""Photo Frame channel plugin for Mimir."""
+"""Photo Frame for Mimir."""
