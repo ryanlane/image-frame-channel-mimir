@@ -402,7 +402,7 @@ class PhotoFrameIntegrationTester:
 
 def main():
     """Main test runner"""
-    base_url = "http://oak:5000"  # Default to oak server
+    base_url = "http://mimir.local:5000  # example server URL
     
     if len(sys.argv) > 1:
         base_url = sys.argv[1]
